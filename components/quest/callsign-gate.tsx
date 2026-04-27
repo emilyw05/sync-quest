@@ -42,6 +42,7 @@ export function CallsignGate({ quest, defaultCallsign = "", isHost, onJoin }: Pr
       await onJoin(trimmed);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't waddle into the pond.");
+    } finally {
       setSubmitting(false);
     }
   }

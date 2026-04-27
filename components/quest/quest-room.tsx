@@ -20,6 +20,7 @@ import {
   forgetParticipant,
   readParticipant,
   rememberParticipant,
+  type ParticipantSession,
 } from "@/lib/participant-token";
 import { readHostToken } from "@/lib/host-token";
 import { useClientValue } from "@/lib/use-client-value";
@@ -36,10 +37,15 @@ export function QuestRoom({ quest }: Props) {
   );
 
   const viewerTimezone = useClientValue(() => getLocalTimezone(), "UTC");
-  const participantSession = useClientValue(
+  // `useClientValue` does not re-render when localStorage changes (no-op
+  // subscribe). After a successful join we must set React state, or
+  // `readParticipant` stays stale and the gate never dismisses.
+  const storedParticipant = useClientValue(
     () => readParticipant(quest.slug),
-    null as ReturnType<typeof readParticipant>,
+    null as ParticipantSession | null,
   );
+  const [joinSession, setJoinSession] = React.useState<ParticipantSession | null>(null);
+  const participantSession = joinSession ?? storedParticipant;
   // We can no longer SELECT quests.host_token, so host gating is optimistic:
   // any browser that holds a token for this slug sees host UI. The server
   // RPC rejects mismatched tokens at confirm time, so this is UX-only.
@@ -72,10 +78,9 @@ export function QuestRoom({ quest }: Props) {
 
   async function handleJoin(callsign: string) {
     const participant = await store.joinAsParticipant(callsign, viewerTimezone);
-    rememberParticipant(quest.slug, {
-      id: participant.id,
-      authToken: participant.auth_token,
-    });
+    const session = { id: participant.id, authToken: participant.auth_token };
+    rememberParticipant(quest.slug, session);
+    setJoinSession(session);
   }
 
   function handleLeave() {
