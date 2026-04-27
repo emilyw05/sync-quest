@@ -43,9 +43,32 @@ import {
 import { createQuest } from "@/lib/quest-api";
 import { isSupabaseConfigured } from "@/lib/supabase";
 import { useClientValue, useHasMounted } from "@/lib/use-client-value";
+import type { PostgrestError } from "@supabase/supabase-js";
 
 const HOUR_OPTIONS = Array.from({ length: 24 }, (_, h) => h * 60);
 const SLOT_PRESETS = [15, 30, 60];
+
+function createQuestErrorMessage(
+  isConfigured: boolean,
+  persisted: boolean,
+  supabaseError: PostgrestError | null,
+): string | null {
+  if (persisted) return null;
+  if (!isConfigured) return null; // local preview mode; ghost quest is expected
+
+  if (supabaseError) {
+    const code = (supabaseError as PostgrestError & { code?: string }).code;
+    if (code === "PGRST202" || /Could not find the function/i.test(supabaseError.message)) {
+      return "Your Supabase project is missing the `fn_create_quest` RPC. Open the Supabase SQL editor, paste in `supabase/schema.sql` from this repo, run it, wait a few seconds, then try again.";
+    }
+    if (/JWT|invalid api key|Invalid API key/i.test(supabaseError.message)) {
+      return "Supabase rejected the API key. Double-check that `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in Vercel match the same project (Project Settings → API), then redeploy with the build cache disabled.";
+    }
+    return `Could not save the expedition: ${supabaseError.message}${supabaseError.hint ? ` — ${supabaseError.hint}` : ""}`;
+  }
+
+  return "The expedition was not saved to Supabase (unknown error). Check the browser console for details.";
+}
 
 export function QuestCreationForm() {
   const router = useRouter();
@@ -106,7 +129,7 @@ export function QuestCreationForm() {
     setSubmitting(true);
     setError(null);
     try {
-      const { quest } = await createQuest({
+      const { quest, persisted, error: supabaseError } = await createQuest({
         title: title.trim(),
         hostCallsign: callsign.trim(),
         hostTimezone: timezone,
@@ -116,6 +139,18 @@ export function QuestCreationForm() {
         dayEndMinutes: dayEnd,
         slotMinutes,
       });
+
+      const message = createQuestErrorMessage(
+        isSupabaseConfigured(),
+        persisted,
+        supabaseError,
+      );
+      if (message) {
+        setError(message);
+        setSubmitting(false);
+        return;
+      }
+
       router.push(`/meetup/${quest.slug}`);
     } catch (err) {
       console.error(err);

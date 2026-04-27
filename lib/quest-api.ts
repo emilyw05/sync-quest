@@ -1,6 +1,7 @@
 "use client";
 
 import { addMinutes } from "date-fns";
+import type { PostgrestError } from "@supabase/supabase-js";
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
 import { zonedDayMinuteToUtc } from "@/lib/timezone";
 import { generateQuestSlug } from "@/lib/quest-slug";
@@ -12,6 +13,8 @@ export type CreateQuestResult = {
   shareUrl: string;
   /** True when the row was actually persisted to Supabase. */
   persisted: boolean;
+  /** Set when the RPC call failed; never persisted. */
+  error: PostgrestError | null;
 };
 
 /**
@@ -62,11 +65,12 @@ export async function createQuest(input: CreateQuestInput): Promise<CreateQuestR
   };
 
   let persisted = false;
+  let error: PostgrestError | null = null;
 
   if (isSupabaseConfigured()) {
     const client = getSupabaseClient();
     if (client) {
-      const { data, error } = await client.rpc("fn_create_quest", {
+      const { data, error: rpcError } = await client.rpc("fn_create_quest", {
         p_slug: slug,
         p_host_token: hostToken,
         p_title: title,
@@ -79,8 +83,12 @@ export async function createQuest(input: CreateQuestInput): Promise<CreateQuestR
         p_slot_minutes: input.slotMinutes,
       });
 
-      if (error) {
-        console.warn("[syncquest] failed to persist quest, using local draft", error);
+      if (rpcError) {
+        error = rpcError;
+        console.warn(
+          "[syncquest] failed to persist quest, using local draft",
+          rpcError,
+        );
       } else if (data) {
         const row = data as HostQuest;
         draft.id = row.id ?? slug;
@@ -97,5 +105,5 @@ export async function createQuest(input: CreateQuestInput): Promise<CreateQuestR
       ? `${window.location.origin}/meetup/${slug}`
       : `/meetup/${slug}`;
 
-  return { quest: draft, shareUrl, persisted };
+  return { quest: draft, shareUrl, persisted, error };
 }
