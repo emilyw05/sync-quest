@@ -187,3 +187,5 @@ full audit.
 - Duck favicon set + 1200×630 OG / Twitter preview cards.
 
 Smoke test: Vercel deploy hook 2026-04-29T23:31:30Z
+
+Smoke test: manual edit
