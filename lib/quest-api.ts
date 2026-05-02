@@ -8,6 +8,18 @@ import { generateQuestSlug } from "@/lib/quest-slug";
 import { mintHostToken, rememberHostToken } from "@/lib/host-token";
 import type { CreateQuestInput, HostQuest, Quest } from "@/lib/types";
 
+/** PostgREST: RPC not in schema cache / no matching signature (e.g. old DB). */
+function isFnCreateQuestMissingError(err: PostgrestError): boolean {
+  const code = (err as PostgrestError & { code?: string }).code;
+  if (code === "PGRST202") return true;
+  const msg = err.message ?? "";
+  if (/Could not find the function/i.test(msg)) return true;
+  if (/function public\.fn_create_quest/i.test(msg) && /does not exist/i.test(msg)) {
+    return true;
+  }
+  return false;
+}
+
 export type CreateQuestResult = {
   quest: Quest;
   shareUrl: string;
@@ -33,6 +45,9 @@ export async function createQuest(input: CreateQuestInput): Promise<CreateQuestR
   const hostToken = mintHostToken();
 
   const keys = [...new Set(input.meetingDayKeys)].filter(Boolean).sort();
+  if (keys.length === 0) {
+    throw new Error("Pick at least one day.");
+  }
   const firstKey = keys[0];
   const lastKey = keys[keys.length - 1];
 
@@ -78,7 +93,7 @@ export async function createQuest(input: CreateQuestInput): Promise<CreateQuestR
   if (isSupabaseConfigured()) {
     const client = getSupabaseClient();
     if (client) {
-      const { data, error: rpcError } = await client.rpc("fn_create_quest", {
+      const payloadBase = {
         p_slug: slug,
         p_host_token: hostToken,
         p_title: title,
@@ -89,8 +104,22 @@ export async function createQuest(input: CreateQuestInput): Promise<CreateQuestR
         p_day_start_minutes: input.dayStartMinutes,
         p_day_end_minutes: input.dayEndMinutes,
         p_slot_minutes: input.slotMinutes,
+      };
+
+      let { data, error: rpcError } = await client.rpc("fn_create_quest", {
+        ...payloadBase,
         p_meeting_day_keys: keys,
       });
+
+      if (rpcError && isFnCreateQuestMissingError(rpcError)) {
+        console.warn(
+          "[syncquest] Retrying fn_create_quest without p_meeting_day_keys (deploy latest supabase/schema.sql for discrete days + 11-arg RPC).",
+          rpcError.message,
+        );
+        const retry = await client.rpc("fn_create_quest", payloadBase);
+        data = retry.data;
+        rpcError = retry.error;
+      }
 
       if (rpcError) {
         error = rpcError;

@@ -58,7 +58,7 @@ function createQuestErrorMessage(
   if (supabaseError) {
     const code = (supabaseError as PostgrestError & { code?: string }).code;
     if (code === "PGRST202" || /Could not find the function/i.test(supabaseError.message)) {
-      return "Supabase is missing fn_create_quest. Run supabase/schema.sql, wait a few seconds, retry.";
+      return "Database RPC missing or outdated. In Supabase: SQL Editor → paste and run the full `supabase/schema.sql` from this repo → wait ~1 min → try again.";
     }
     if (/JWT|invalid api key|Invalid API key/i.test(supabaseError.message)) {
       return "Bad Supabase API key. Match Vercel env to Project Settings → API, redeploy.";
