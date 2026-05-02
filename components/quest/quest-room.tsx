@@ -120,16 +120,15 @@ export function QuestRoom({ quest }: Props) {
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 sm:px-6 pb-24">
         <div className="mb-6 space-y-1">
           <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-secondary">
-            Expedition · {quest.slug}
+            {quest.slug}
           </p>
           <h1 className="text-2xl font-extrabold tracking-tight sm:text-3xl">
             {quest.title}
           </h1>
           <p className="text-xs text-muted-foreground">
-            Captained by{" "}
-            <span className="text-foreground font-bold">{quest.host_callsign}</span>
+            Host <span className="text-foreground font-bold">{quest.host_callsign}</span>
             <span className="mx-1.5">·</span>
-            Captain&apos;s clock: {quest.host_timezone}
+            {quest.host_timezone}
           </p>
         </div>
 
@@ -137,7 +136,7 @@ export function QuestRoom({ quest }: Props) {
           <Card className="mb-6 border-destructive/50">
             <CardHeader>
               <CardTitle className="text-base text-destructive">
-                The pond is rippling — couldn&apos;t load this expedition
+                Couldn&apos;t load
               </CardTitle>
             </CardHeader>
             <CardContent className="text-sm text-muted-foreground">
@@ -175,22 +174,14 @@ export function QuestRoom({ quest }: Props) {
               <CardContent className="space-y-4 pt-6">
                 {isHost ? (
                   <div className="-mt-1 mb-1 space-y-0.5">
-                    <h2 className="text-lg font-extrabold tracking-tight">
-                      Sending out the call!
-                    </h2>
-                    <p className="text-xs text-muted-foreground">
-                      The group details are set. Share the link below to
-                      invite your baby duck partners on the expedition.
-                    </p>
+                    <h2 className="text-lg font-extrabold tracking-tight">Share link</h2>
+                    <p className="text-xs text-muted-foreground">Invite your squad.</p>
                   </div>
                 ) : (
                   <div className="-mt-1 mb-1 space-y-0.5">
-                    <h2 className="text-lg font-extrabold tracking-tight">
-                      Add your waddle window!
-                    </h2>
+                    <h2 className="text-lg font-extrabold tracking-tight">Your grid</h2>
                     <p className="text-xs text-muted-foreground">
-                      Show the captain when you&apos;re ready to waddle in{" "}
-                      <span className="font-bold text-foreground">{viewerTimezone}</span>.
+                      Times in <span className="font-bold text-foreground">{viewerTimezone}</span>.
                     </p>
                   </div>
                 )}
@@ -286,9 +277,7 @@ function RaiderRail({
         Squad
       </span>
       {participants.length === 0 ? (
-        <span className="text-muted-foreground/80">
-          …waiting for the first duckling
-        </span>
+        <span className="text-muted-foreground/80">…</span>
       ) : (
         participants.map((p) => (
           <span
@@ -335,7 +324,7 @@ function ShareRow({ slug }: { slug: string }) {
           </>
         ) : (
           <>
-            <Copy className="h-3.5 w-3.5" /> Copy pond link
+            <Copy className="h-3.5 w-3.5" /> Copy
           </>
         )}
       </Button>
@@ -369,7 +358,7 @@ function LoadingCard() {
     <Card>
       <CardContent className="flex items-center gap-3 p-6 text-sm text-muted-foreground">
         <Loader2 className="h-4 w-4 animate-spin text-primary" />
-        Paddling out to the pond…
+        Loading…
       </CardContent>
     </Card>
   );

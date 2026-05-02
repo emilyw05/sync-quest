@@ -41,6 +41,9 @@ create table if not exists public.quests (
 
 create index if not exists quests_slug_idx on public.quests (slug);
 
+alter table public.quests
+  add column if not exists meeting_day_keys text[];
+
 create table if not exists public.participants (
   id          uuid primary key default gen_random_uuid(),
   quest_id    uuid not null references public.quests(id) on delete cascade,
@@ -81,6 +84,7 @@ revoke all on public.availability from anon, authenticated;
 grant select (
   id, slug, title, host_callsign, host_timezone,
   start_date, end_date,
+  meeting_day_keys,
   day_start_minutes, day_end_minutes, slot_minutes,
   status, confirmed_start_utc, confirmed_end_utc,
   created_at
@@ -119,6 +123,10 @@ create policy "availability read"  on public.availability for select using (true
 -- here and stashes it in localStorage. Returns the full row including
 -- host_token so the creator can authenticate subsequent actions.
 -- =========================
+drop function if exists public.fn_create_quest(
+  text, text, text, text, text, timestamptz, timestamptz, int, int, int
+);
+
 create or replace function public.fn_create_quest(
   p_slug              text,
   p_host_token        text,
@@ -129,7 +137,8 @@ create or replace function public.fn_create_quest(
   p_end_date          timestamptz,
   p_day_start_minutes int,
   p_day_end_minutes   int,
-  p_slot_minutes      int
+  p_slot_minutes      int,
+  p_meeting_day_keys  text[] default null
 )
 returns public.quests
 language plpgsql
@@ -138,6 +147,7 @@ set search_path = public, pg_temp
 as $$
 declare
   v_row public.quests;
+  v_keys text[];
 begin
   if length(coalesce(btrim(p_title), '')) = 0 then
     raise exception 'Title is required.';
@@ -167,9 +177,16 @@ begin
   -- IANA timezone sanity check. Throws if unknown.
   perform now() at time zone p_host_timezone;
 
+  v_keys := null;
+  if p_meeting_day_keys is not null
+     and coalesce(array_length(p_meeting_day_keys, 1), 0) > 0 then
+    v_keys := p_meeting_day_keys;
+  end if;
+
   insert into public.quests (
     slug, title, host_callsign, host_token, host_timezone,
     start_date, end_date,
+    meeting_day_keys,
     day_start_minutes, day_end_minutes, slot_minutes
   )
   values (
@@ -180,6 +197,7 @@ begin
     p_host_timezone,
     p_start_date,
     p_end_date,
+    v_keys,
     p_day_start_minutes,
     p_day_end_minutes,
     p_slot_minutes
@@ -194,7 +212,7 @@ end;
 $$;
 
 grant execute on function public.fn_create_quest(
-  text, text, text, text, text, timestamptz, timestamptz, int, int, int
+  text, text, text, text, text, timestamptz, timestamptz, int, int, int, text[]
 ) to anon, authenticated;
 
 -- =========================
@@ -358,6 +376,7 @@ end $$;
 alter publication supabase_realtime add table public.quests
   (id, slug, title, host_callsign, host_timezone,
    start_date, end_date,
+   meeting_day_keys,
    day_start_minutes, day_end_minutes, slot_minutes,
    status, confirmed_start_utc, confirmed_end_utc, created_at);
 

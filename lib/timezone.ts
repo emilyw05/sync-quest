@@ -70,6 +70,11 @@ export function formatZonedSafe(
   }
 }
 
+/** Calendar day key (yyyy-MM-dd) for an instant in a given IANA zone. */
+export function dateToDayKeyInTimezone(d: Date, timezone: string): string {
+  return formatInTimeZone(d, timezone, "yyyy-MM-dd");
+}
+
 /** Return HH:mm for a minutes-from-midnight value (display helper). */
 export function formatMinutesOfDay(minutes: number, use12h = true): string {
   const h24 = Math.floor(minutes / 60) % 24;

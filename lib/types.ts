@@ -18,6 +18,8 @@ export type Quest = {
   host_timezone: string;
   start_date: string;
   end_date: string;
+  /** Host-local calendar days (yyyy-MM-dd), non-consecutive ok. Null = all days from start_date→end_date. */
+  meeting_day_keys: string[] | null;
   day_start_minutes: number;
   day_end_minutes: number;
   slot_minutes: number;
@@ -64,8 +66,8 @@ export type CreateQuestInput = {
   title: string;
   hostCallsign: string;
   hostTimezone: string;
-  startDate: Date;
-  endDate: Date;
+  /** Distinct host-local dates (yyyy-MM-dd), sorted client-side before RPC. */
+  meetingDayKeys: string[];
   dayStartMinutes: number;
   dayEndMinutes: number;
   slotMinutes: number;

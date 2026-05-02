@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
-import { format, addDays } from "date-fns";
+import { addDays, format } from "date-fns";
 import {
   CalendarDays,
   Clock,
@@ -15,13 +15,11 @@ import {
   Sun,
 } from "lucide-react";
 import { DuckMark } from "@/components/brand/logo";
-import type { DateRange } from "react-day-picker";
 
 import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardFooter,
   CardHeader,
   CardTitle,
@@ -36,6 +34,7 @@ import {
 } from "@/components/ui/popover";
 import { cn } from "@/lib/utils";
 import {
+  dateToDayKeyInTimezone,
   formatMinutesOfDay,
   getLocalTimezone,
   timezoneOffsetLabel,
@@ -54,20 +53,20 @@ function createQuestErrorMessage(
   supabaseError: PostgrestError | null,
 ): string | null {
   if (persisted) return null;
-  if (!isConfigured) return null; // local preview mode; ghost quest is expected
+  if (!isConfigured) return null;
 
   if (supabaseError) {
     const code = (supabaseError as PostgrestError & { code?: string }).code;
     if (code === "PGRST202" || /Could not find the function/i.test(supabaseError.message)) {
-      return "Your Supabase project is missing the `fn_create_quest` RPC. Open the Supabase SQL editor, paste in `supabase/schema.sql` from this repo, run it, wait a few seconds, then try again.";
+      return "Supabase is missing fn_create_quest. Run supabase/schema.sql, wait a few seconds, retry.";
     }
     if (/JWT|invalid api key|Invalid API key/i.test(supabaseError.message)) {
-      return "Supabase rejected the API key. Double-check that `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` in Vercel match the same project (Project Settings → API), then redeploy with the build cache disabled.";
+      return "Bad Supabase API key. Match Vercel env to Project Settings → API, redeploy.";
     }
-    return `Could not save the expedition: ${supabaseError.message}${supabaseError.hint ? ` — ${supabaseError.hint}` : ""}`;
+    return `Save failed: ${supabaseError.message}${supabaseError.hint ? ` — ${supabaseError.hint}` : ""}`;
   }
 
-  return "The expedition was not saved to Supabase (unknown error). Check the browser console for details.";
+  return "Not saved. Check the console.";
 }
 
 export function QuestCreationForm() {
@@ -75,57 +74,62 @@ export function QuestCreationForm() {
   const mounted = useHasMounted();
   const timezone = useClientValue(() => getLocalTimezone(), "UTC");
 
-  const [title, setTitle] = React.useState("The Great Breadcrumb Expedition");
+  const [title, setTitle] = React.useState("Team meetup");
   const [callsign, setCallsign] = React.useState("");
-  const [userRange, setUserRange] = React.useState<DateRange | undefined>(undefined);
+  /** `undefined` = use seeded default days until the host edits the calendar. */
+  const [userDays, setUserDays] = React.useState<Date[] | undefined>(undefined);
   const [dayStart, setDayStart] = React.useState(9 * 60);
   const [dayEnd, setDayEnd] = React.useState(22 * 60);
   const [slotMinutes, setSlotMinutes] = React.useState(30);
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
-  // Default range derived at render time (not via useEffect), seeded once mounted.
-  const defaultRange = React.useMemo<DateRange | undefined>(() => {
-    if (!mounted) return undefined;
+  const defaultDays = React.useMemo(() => {
+    if (!mounted) return [] as Date[];
     const today = new Date();
-    return { from: today, to: addDays(today, 6) };
+    return Array.from({ length: 7 }, (_, i) => addDays(today, i));
   }, [mounted]);
-  const range = userRange ?? defaultRange;
-  const setRange = setUserRange;
+
+  const selectedDays = userDays ?? defaultDays;
+
+  const meetingDayKeys = React.useMemo(() => {
+    const keys = new Set(
+      selectedDays.map((d) => dateToDayKeyInTimezone(d, timezone)),
+    );
+    return [...keys].sort();
+  }, [selectedDays, timezone]);
 
   const canSubmit =
     mounted &&
     callsign.trim().length >= 2 &&
-    Boolean(range?.from) &&
-    Boolean(range?.to) &&
+    meetingDayKeys.length >= 1 &&
     dayEnd > dayStart &&
     !submitting;
 
-  const rangeLabel = React.useMemo(() => {
-    if (!range?.from) return "Pick a date range";
-    if (!range.to || range.to.getTime() === range.from.getTime()) {
-      return format(range.from, "MMM d, yyyy");
+  const daysLabel = React.useMemo(() => {
+    if (meetingDayKeys.length === 0) return "Pick days";
+    if (meetingDayKeys.length <= 2) {
+      return meetingDayKeys
+        .map((k) => {
+          const [y, m, d] = k.split("-").map(Number);
+          return format(new Date(y, m - 1, d), "MMM d");
+        })
+        .join(", ");
     }
-    return `${format(range.from, "MMM d")} → ${format(range.to, "MMM d, yyyy")}`;
-  }, [range]);
-
-  const totalDays = React.useMemo(() => {
-    if (!range?.from || !range?.to) return 0;
-    return (
-      Math.round(
-        (range.to.getTime() - range.from.getTime()) / (1000 * 60 * 60 * 24),
-      ) + 1
-    );
-  }, [range]);
+    return `${meetingDayKeys.length} days`;
+  }, [meetingDayKeys]);
 
   const totalSlots = React.useMemo(() => {
-    if (!totalDays || dayEnd <= dayStart) return 0;
-    return totalDays * Math.ceil((dayEnd - dayStart) / slotMinutes);
-  }, [totalDays, dayStart, dayEnd, slotMinutes]);
+    if (!meetingDayKeys.length || dayEnd <= dayStart) return 0;
+    return (
+      meetingDayKeys.length *
+      Math.ceil((dayEnd - dayStart) / slotMinutes)
+    );
+  }, [meetingDayKeys.length, dayStart, dayEnd, slotMinutes]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!canSubmit || !range?.from || !range?.to) return;
+    if (!canSubmit || meetingDayKeys.length < 1) return;
     setSubmitting(true);
     setError(null);
     try {
@@ -133,8 +137,7 @@ export function QuestCreationForm() {
         title: title.trim(),
         hostCallsign: callsign.trim(),
         hostTimezone: timezone,
-        startDate: range.from,
-        endDate: range.to,
+        meetingDayKeys,
         dayStartMinutes: dayStart,
         dayEndMinutes: dayEnd,
         slotMinutes,
@@ -154,9 +157,7 @@ export function QuestCreationForm() {
       router.push(`/meetup/${quest.slug}`);
     } catch (err) {
       console.error(err);
-      setError(
-        err instanceof Error ? err.message : "Could not create meetup — try again.",
-      );
+      setError(err instanceof Error ? err.message : "Could not create.");
       setSubmitting(false);
     }
   }
@@ -174,12 +175,7 @@ export function QuestCreationForm() {
               <DuckMark size={28} />
             </span>
             <div>
-              <CardTitle className="text-2xl">Start a Great Expedition!</CardTitle>
-              <CardDescription>
-                There&apos;s a giant, legendary breadcrumb across the pond! We
-                need an elite squad of baby ducks. You&apos;re the leader —
-                let&apos;s rally the team!
-              </CardDescription>
+              <CardTitle className="text-2xl">New meetup</CardTitle>
             </div>
           </div>
         </CardHeader>
@@ -190,34 +186,28 @@ export function QuestCreationForm() {
               <div className="flex items-start gap-2 rounded-2xl border-2 border-secondary/40 bg-secondary/10 px-3 py-2 text-xs text-secondary-foreground">
                 <Sparkles className="mt-[2px] h-3.5 w-3.5 shrink-0 text-secondary" />
                 <span>
-                  Pond preview mode: add <code className="font-mono">NEXT_PUBLIC_SUPABASE_URL</code> &{" "}
-                  <code className="font-mono">NEXT_PUBLIC_SUPABASE_ANON_KEY</code> to <code className="font-mono">.env.local</code>
-                  {" "}to unlock realtime quacks.
+                  Preview — add{" "}
+                  <code className="font-mono">NEXT_PUBLIC_SUPABASE_*</code> to{" "}
+                  <code className="font-mono">.env.local</code> for live data.
                 </span>
               </div>
             )}
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field
-                label="Expedition group name"
-                icon={<Sparkles className="h-3.5 w-3.5" />}
-              >
+              <Field label="Title" icon={<Sparkles className="h-3.5 w-3.5" />}>
                 <Input
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g. The Great Breadcrumb Expedition"
+                  placeholder="Team meetup"
                   maxLength={80}
                 />
               </Field>
 
-              <Field
-                label="Your name (Mission Captain)"
-                icon={<Compass className="h-3.5 w-3.5" />}
-              >
+              <Field label="Your name" icon={<Compass className="h-3.5 w-3.5" />}>
                 <Input
                   value={callsign}
                   onChange={(e) => setCallsign(e.target.value)}
-                  placeholder="Captain Quackers"
+                  placeholder="Alex"
                   maxLength={24}
                   autoComplete="off"
                   required
@@ -225,10 +215,7 @@ export function QuestCreationForm() {
               </Field>
             </div>
 
-            <Field
-              label="Waddle dates"
-              icon={<CalendarDays className="h-3.5 w-3.5" />}
-            >
+            <Field label="Days" icon={<CalendarDays className="h-3.5 w-3.5" />}>
               <Popover>
                 <PopoverTrigger asChild>
                   <Button
@@ -237,56 +224,50 @@ export function QuestCreationForm() {
                     size="lg"
                     className={cn(
                       "w-full justify-between text-left font-medium",
-                      !range?.from && "text-muted-foreground",
+                      meetingDayKeys.length === 0 && "text-muted-foreground",
                     )}
                   >
                     <span className="flex items-center gap-2">
                       <CalendarDays className="h-4 w-4 text-primary" />
-                      {rangeLabel}
+                      {daysLabel}
                     </span>
-                    {totalDays > 0 && (
+                    {meetingDayKeys.length > 0 && (
                       <span className="text-xs text-muted-foreground tabular-nums">
-                        {totalDays} day{totalDays === 1 ? "" : "s"}
+                        {meetingDayKeys.length}
                       </span>
                     )}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto" align="start">
                   <Calendar
-                    mode="range"
+                    mode="multiple"
                     numberOfMonths={2}
-                    selected={range}
-                    onSelect={setRange}
+                    selected={selectedDays}
+                    onSelect={(d) => setUserDays(d ?? [])}
                     disabled={{ before: new Date() }}
                   />
                 </PopoverContent>
               </Popover>
             </Field>
 
-            <Field
-              label="Active hours (after morning nap?)"
-              icon={<Sun className="h-3.5 w-3.5" />}
-            >
+            <Field label="Hours" icon={<Sun className="h-3.5 w-3.5" />}>
               <div className="grid grid-cols-2 gap-2">
                 <TimeSelect
                   value={dayStart}
                   onChange={setDayStart}
                   options={HOUR_OPTIONS}
-                  ariaLabel="Active hours start"
+                  ariaLabel="Start"
                 />
                 <TimeSelect
                   value={dayEnd}
                   onChange={setDayEnd}
                   options={HOUR_OPTIONS.map((m) => m + 60)}
-                  ariaLabel="Active hours end"
+                  ariaLabel="End"
                 />
               </div>
             </Field>
 
-            <Field
-              label="Estimated waddling time"
-              icon={<Footprints className="h-3.5 w-3.5" />}
-            >
+            <Field label="Slot" icon={<Footprints className="h-3.5 w-3.5" />}>
               <div className="flex gap-2">
                 {SLOT_PRESETS.map((preset) => (
                   <button
@@ -300,7 +281,7 @@ export function QuestCreationForm() {
                         : "border-border bg-card text-muted-foreground hover:text-foreground hover:border-primary/60",
                     )}
                   >
-                    {preset} min
+                    {preset}m
                   </button>
                 ))}
               </div>
@@ -311,14 +292,13 @@ export function QuestCreationForm() {
                 <span className="inline-flex h-6 items-center rounded-full bg-secondary/20 px-2 font-bold text-secondary">
                   {mounted ? timezoneOffsetLabel(timezone) : "—"}
                 </span>
-                <span className="truncate">
-                  Captain&apos;s clock: {mounted ? timezone : "sniffing the breeze…"}
-                </span>
+                <span className="truncate">{mounted ? timezone : "…"}</span>
               </div>
               <div className="tabular-nums">
                 <span className="text-foreground font-bold">{totalSlots}</span> slots
                 <span className="mx-1">·</span>
-                <span className="text-foreground font-bold">{totalDays}</span> days
+                <span className="text-foreground font-bold">{meetingDayKeys.length}</span>{" "}
+                days
               </div>
             </div>
 
@@ -337,10 +317,7 @@ export function QuestCreationForm() {
           </CardContent>
 
           <CardFooter className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-xs text-muted-foreground">
-              You&apos;ll get a shareable pond link. Squadmates just need a
-              name — no account required.
-            </p>
+            <p className="text-xs text-muted-foreground">Share link · guests pick a name</p>
             <Button
               type="submit"
               variant="raid"
@@ -350,11 +327,11 @@ export function QuestCreationForm() {
             >
               {submitting ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin" /> Hatching…
+                  <Loader2 className="h-4 w-4 animate-spin" /> …
                 </>
               ) : (
                 <>
-                  <Feather className="h-4 w-4" /> Rally the squad
+                  <Feather className="h-4 w-4" /> Create
                 </>
               )}
             </Button>

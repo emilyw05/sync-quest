@@ -16,6 +16,7 @@ const QUEST_COLUMNS = [
   "host_timezone",
   "start_date",
   "end_date",
+  "meeting_day_keys",
   "day_start_minutes",
   "day_end_minutes",
   "slot_minutes",
@@ -46,7 +47,12 @@ export async function getQuestBySlug(slug: string): Promise<Quest | null> {
     });
     if (!res.ok) return null;
     const rows = (await res.json()) as Quest[];
-    return rows[0] ?? null;
+    const row = rows[0];
+    if (!row) return null;
+    return {
+      ...row,
+      meeting_day_keys: row.meeting_day_keys ?? null,
+    };
   } catch {
     return null;
   }

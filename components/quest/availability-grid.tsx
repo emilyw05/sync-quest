@@ -1,15 +1,17 @@
 "use client";
 
 import * as React from "react";
-import { addDays, differenceInCalendarDays, isValid } from "date-fns";
+import { isValid } from "date-fns";
 import { Sun } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   buildSlotGridUtc,
+  dateToDayKeyInTimezone,
   findMidnightLine,
   formatMinutesOfDay,
   formatZonedSafe,
 } from "@/lib/timezone";
+import { expandQuestDays } from "@/lib/quest-days";
 import type { Quest } from "@/lib/types";
 import type { QuestSnapshot } from "@/lib/quest-store";
 
@@ -55,18 +57,10 @@ export function AvailabilityGrid({
     visited: new Set(),
   });
 
-  const { days, rowStarts } = React.useMemo(() => {
-    const start = new Date(quest.start_date);
-    const end = new Date(quest.end_date);
-    if (!isValid(start) || !isValid(end)) {
-      return { days: [] as Date[], rowStarts: [] as number[] };
-    }
-    const totalDays = Math.max(0, differenceInCalendarDays(end, start)) + 1;
-    const daysArr: Date[] = [];
-    for (let i = 0; i < totalDays; i++) daysArr.push(addDays(start, i));
-    if (quest.slot_minutes <= 0) {
-      return { days: daysArr, rowStarts: [] as number[] };
-    }
+  const days = React.useMemo(() => expandQuestDays(quest), [quest]);
+
+  const rowStarts = React.useMemo(() => {
+    if (quest.slot_minutes <= 0) return [] as number[];
     const rowsPerDay = Math.ceil(
       (quest.day_end_minutes - quest.day_start_minutes) / quest.slot_minutes,
     );
@@ -74,7 +68,7 @@ export function AvailabilityGrid({
     for (let r = 0; r < rowsPerDay; r++) {
       rowMins.push(quest.day_start_minutes + r * quest.slot_minutes);
     }
-    return { days: daysArr, rowStarts: rowMins };
+    return rowMins;
   }, [quest]);
 
   const slotMatrix = React.useMemo(() => {
@@ -187,7 +181,7 @@ export function AvailabilityGrid({
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
         <span>
-          Pond clock: <span className="text-foreground font-bold">{viewerTimezone}</span>
+          <span className="text-foreground font-bold">{viewerTimezone}</span>
         </span>
         <span className="flex items-center gap-2">
           <span className="flex items-center gap-1">
@@ -196,7 +190,7 @@ export function AvailabilityGrid({
               className="h-3.5 w-3.5 rounded-md border border-border/60"
               style={{ background: "var(--color-heat-0)" }}
             />
-            empty pond
+            empty
           </span>
           <span className="flex items-center gap-1">
             <span
@@ -204,7 +198,7 @@ export function AvailabilityGrid({
               className="h-3.5 w-3.5 rounded-md"
               style={{ background: "var(--color-heat-3)" }}
             />
-            some ducks
+            partial
           </span>
           <span className="flex items-center gap-1">
             <span
@@ -212,7 +206,7 @@ export function AvailabilityGrid({
               className="h-3.5 w-3.5 rounded-md glow-gold"
               style={{ background: "var(--color-heat-max)" }}
             />
-            all in! {participantCount > 0 ? `(${participantCount})` : ""}
+            all {participantCount > 0 ? `(${participantCount})` : ""}
           </span>
         </span>
       </div>
@@ -231,8 +225,12 @@ export function AvailabilityGrid({
             }}
           >
             <div />
-            {days.map((day, idx) => (
-              <DayHeader key={idx} day={day} hostTimezone={quest.host_timezone} />
+            {days.map((day) => (
+              <DayHeader
+                key={dateToDayKeyInTimezone(day, quest.host_timezone)}
+                day={day}
+                hostTimezone={quest.host_timezone}
+              />
             ))}
           </div>
 
@@ -282,7 +280,7 @@ export function AvailabilityGrid({
                         readOnly ? "cursor-pointer" : "cursor-crosshair",
                       )}
                       style={{ backgroundColor: color }}
-                      aria-label={`Slot ${formatZonedSafe(slot, viewerTimezone, "EEE MMM d, h:mm a")} — ${meta.count} duck${meta.count === 1 ? "" : "s"} ready`}
+                      aria-label={`${formatZonedSafe(slot, viewerTimezone, "EEE MMM d, h:mm a")} · ${meta.count}/${participantCount || "—"}`}
                     >
                       {atMax && (
                         <Sun
@@ -311,18 +309,14 @@ export function AvailabilityGrid({
           </div>
 
           {participantCount === 0 && (
-            <p className="mt-3 text-center text-xs text-muted-foreground">
-              Waiting for the first duckling to paint a waddle window…
-            </p>
+            <p className="mt-3 text-center text-xs text-muted-foreground">No votes yet.</p>
           )}
         </div>
       </div>
 
       {!readOnly && viewerParticipantId && (
         <p className="text-center text-[11px] text-muted-foreground">
-          Tap or drag to paint your waddle windows. The{" "}
-          <span className="text-secondary font-bold">orange line</span> marks
-          where your local day rolls into the next.
+          Drag cells · <span className="text-secondary font-bold">orange</span> = your midnight
         </p>
       )}
     </div>

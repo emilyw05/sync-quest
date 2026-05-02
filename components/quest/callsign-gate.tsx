@@ -33,7 +33,7 @@ export function CallsignGate({ quest, defaultCallsign = "", isHost, onJoin }: Pr
     e.preventDefault();
     const trimmed = value.trim();
     if (trimmed.length < 2) {
-      setError("Your duck name needs at least 2 letters.");
+      setError("2+ characters.");
       return;
     }
     setSubmitting(true);
@@ -41,7 +41,7 @@ export function CallsignGate({ quest, defaultCallsign = "", isHost, onJoin }: Pr
     try {
       await onJoin(trimmed);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't waddle into the pond.");
+      setError(err instanceof Error ? err.message : "Could not join.");
     } finally {
       setSubmitting(false);
     }
@@ -61,36 +61,27 @@ export function CallsignGate({ quest, defaultCallsign = "", isHost, onJoin }: Pr
               <DuckMark size={28} />
             </span>
             <div className="min-w-0">
-              <CardTitle className="truncate text-xl">
-                You&apos;re invited on an adventure!
-              </CardTitle>
+              <CardTitle className="truncate text-xl">Join</CardTitle>
               <CardDescription className="truncate">
-                <span className="font-bold text-foreground">
-                  {quest.host_callsign}
-                </span>{" "}
-                wants you in the squad
+                <span className="font-bold text-foreground">{quest.host_callsign}</span>
+                {" · "}
+                {quest.title}
               </CardDescription>
             </div>
           </div>
         </CardHeader>
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-5">
-            <p className="text-sm text-muted-foreground">
-              <span className="font-bold text-foreground">{quest.host_callsign}</span>{" "}
-              has invited you to join the{" "}
-              <span className="font-bold text-foreground">{quest.title}</span>{" "}
-              squad. They need your help to get the big breadcrumb!
-            </p>
             <div className="space-y-1.5">
               <Label className="flex items-center gap-1.5">
                 <Compass className="h-3.5 w-3.5" />
-                Pick a duck name
+                Name
               </Label>
               <Input
                 autoFocus
                 value={value}
                 onChange={(e) => setValue(e.target.value)}
-                placeholder="Ducky McQuackface"
+                placeholder="Your name"
                 maxLength={24}
                 autoComplete="off"
               />
@@ -109,19 +100,16 @@ export function CallsignGate({ quest, defaultCallsign = "", isHost, onJoin }: Pr
             >
               {submitting ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin" /> Hopping in…
+                  <Loader2 className="h-4 w-4 animate-spin" /> …
                 </>
               ) : (
                 <>
-                  <Feather className="h-4 w-4" /> Waddle into the pond
+                  <Feather className="h-4 w-4" /> Join
                 </>
               )}
             </Button>
             {isHost && (
-              <p className="text-center text-xs text-secondary">
-                You&apos;re the captain of this expedition — captain&apos;s
-                tools unlock once you join.
-              </p>
+              <p className="text-center text-xs text-secondary">You&apos;re host — tools unlock after join.</p>
             )}
           </CardContent>
         </form>

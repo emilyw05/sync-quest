@@ -30,19 +30,17 @@ export function SynergyMeter({
   const pct = Math.max(0, Math.min(1, value));
   const atMax = pct >= 0.999;
   const filled = Math.round(pct * TOTAL_DUCKS);
-  const label = atMax
-    ? "All ducks in a row!"
-    : `${Math.round(pct * 100)}% of the squad lined up`;
+  const label = atMax ? "Full lineup" : `${Math.round(pct * 100)}% overlap`;
 
   return (
     <div className={cn("w-full space-y-2.5", className)}>
       <div className="flex items-center justify-between text-xs font-bold uppercase tracking-[0.14em] text-muted-foreground">
         <span className="flex items-center gap-1.5 text-foreground/80">
           <Sparkles className="h-3.5 w-3.5 text-primary" />
-          Squad Formation
+          Squad overlap
         </span>
         <span className="tabular-nums text-foreground/80">
-          {participants} duck{participants === 1 ? "" : "s"}
+          {participants} here
         </span>
       </div>
 
@@ -99,7 +97,7 @@ export function SynergyMeter({
         </span>
         {atMax && (
           <span className="inline-flex items-center gap-1 text-primary font-bold">
-            <Sparkles className="h-3 w-3" /> Ready to waddle!
+            <Sparkles className="h-3 w-3" /> Go
           </span>
         )}
       </div>

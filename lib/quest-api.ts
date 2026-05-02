@@ -1,7 +1,7 @@
 "use client";
 
-import { addMinutes } from "date-fns";
 import type { PostgrestError } from "@supabase/supabase-js";
+import { fromZonedTime } from "date-fns-tz";
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
 import { zonedDayMinuteToUtc } from "@/lib/timezone";
 import { generateQuestSlug } from "@/lib/quest-slug";
@@ -32,17 +32,24 @@ export async function createQuest(input: CreateQuestInput): Promise<CreateQuestR
   const slug = generateQuestSlug();
   const hostToken = mintHostToken();
 
+  const keys = [...new Set(input.meetingDayKeys)].filter(Boolean).sort();
+  const firstKey = keys[0];
+  const lastKey = keys[keys.length - 1];
+
+  const firstAnchor = fromZonedTime(`${firstKey}T00:00:00`, input.hostTimezone);
+  const lastAnchor = fromZonedTime(`${lastKey}T00:00:00`, input.hostTimezone);
+
   const startIso = zonedDayMinuteToUtc(
-    input.startDate,
+    firstAnchor,
     input.dayStartMinutes,
     input.hostTimezone,
   ).toISOString();
   const endAnchorUtc = zonedDayMinuteToUtc(
-    input.endDate,
+    lastAnchor,
     input.dayEndMinutes,
     input.hostTimezone,
   );
-  const endIso = addMinutes(endAnchorUtc, 0).toISOString();
+  const endIso = endAnchorUtc.toISOString();
 
   const title = input.title.trim() || "Untitled meetup";
   const hostCallsign = input.hostCallsign.trim() || "Host";
@@ -55,6 +62,7 @@ export async function createQuest(input: CreateQuestInput): Promise<CreateQuestR
     host_timezone: input.hostTimezone,
     start_date: startIso,
     end_date: endIso,
+    meeting_day_keys: keys.length ? keys : null,
     day_start_minutes: input.dayStartMinutes,
     day_end_minutes: input.dayEndMinutes,
     slot_minutes: input.slotMinutes,
@@ -81,6 +89,7 @@ export async function createQuest(input: CreateQuestInput): Promise<CreateQuestR
         p_day_start_minutes: input.dayStartMinutes,
         p_day_end_minutes: input.dayEndMinutes,
         p_slot_minutes: input.slotMinutes,
+        p_meeting_day_keys: keys,
       });
 
       if (rpcError) {
@@ -92,6 +101,9 @@ export async function createQuest(input: CreateQuestInput): Promise<CreateQuestR
       } else if (data) {
         const row = data as HostQuest;
         draft.id = row.id ?? slug;
+        draft.meeting_day_keys = row.meeting_day_keys ?? keys;
+        draft.start_date = row.start_date;
+        draft.end_date = row.end_date;
         persisted = true;
       }
     }

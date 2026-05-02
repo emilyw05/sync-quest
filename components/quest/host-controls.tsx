@@ -92,12 +92,8 @@ export function HostControls({
             <Anchor className="h-4 w-4 text-primary-foreground" />
           </span>
           <div>
-            <p className="text-sm font-bold text-foreground">
-              Mission Captain&apos;s deck
-            </p>
-            <p className="text-[11px] text-muted-foreground">
-              Pick the best waddle time, then drop the anchor.
-            </p>
+            <p className="text-sm font-bold text-foreground">Host</p>
+            <p className="text-[11px] text-muted-foreground">Pick slot · confirm</p>
           </div>
         </div>
         <Button
@@ -110,20 +106,18 @@ export function HostControls({
         >
           {submitting ? (
             <>
-              <Loader2 className="h-4 w-4 animate-spin" /> Dropping anchor…
+              <Loader2 className="h-4 w-4 animate-spin" /> …
             </>
           ) : (
             <>
-              <CalendarCheck className="h-4 w-4" /> Set sail at this time
+              <CalendarCheck className="h-4 w-4" /> Confirm time
             </>
           )}
         </Button>
       </div>
 
       {topCandidates.length === 0 ? (
-        <p className="mt-3 text-center text-xs text-muted-foreground">
-          Waiting for ducks to paint their waddle windows…
-        </p>
+        <p className="mt-3 text-center text-xs text-muted-foreground">No votes yet.</p>
       ) : (
         <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
           {topCandidates.map((c) => {
@@ -145,14 +139,11 @@ export function HostControls({
                   {atMax ? (
                     <>
                       <Sparkles className="h-3 w-3 text-primary" />
-                      <span className="text-primary font-bold">
-                        Whole squad ready!
-                      </span>
+                      <span className="text-primary font-bold">All free</span>
                     </>
                   ) : (
                     <span>
-                      {c.count}/{participantCount} duck
-                      {participantCount === 1 ? "" : "s"} ready
+                      {c.count}/{participantCount}
                     </span>
                   )}
                 </span>
