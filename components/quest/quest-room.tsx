@@ -68,16 +68,15 @@ export function QuestRoom({ quest }: Props) {
   }, [snapshot.availability, viewerParticipant?.id]);
 
   const [draftMine, setDraftMine] = React.useState<Set<string> | null>(null);
-  const [guestSaving, setGuestSaving] = React.useState(false);
+  const [availabilitySaving, setAvailabilitySaving] = React.useState(false);
 
   const viewerMine = React.useMemo(() => {
     if (!viewerParticipant) return new Set<string>();
-    if (isHost) return serverMine;
     return draftMine ?? serverMine;
-  }, [viewerParticipant, isHost, serverMine, draftMine]);
+  }, [viewerParticipant, serverMine, draftMine]);
 
-  const guestDirty = React.useMemo(() => {
-    if (isHost || !viewerParticipant || draftMine === null) return false;
+  const availabilityDirty = React.useMemo(() => {
+    if (!viewerParticipant || draftMine === null) return false;
     if (draftMine.size !== serverMine.size) return true;
     for (const iso of draftMine) {
       if (!serverMine.has(iso)) return true;
@@ -86,9 +85,9 @@ export function QuestRoom({ quest }: Props) {
       if (!draftMine.has(iso)) return true;
     }
     return false;
-  }, [isHost, viewerParticipant, draftMine, serverMine]);
+  }, [viewerParticipant, draftMine, serverMine]);
 
-  function patchGuestMine(slotIso: string) {
+  function patchDraftMine(slotIso: string) {
     setDraftMine((prev) => {
       const base = new Set(prev ?? serverMine);
       if (base.has(slotIso)) base.delete(slotIso);
@@ -97,10 +96,10 @@ export function QuestRoom({ quest }: Props) {
     });
   }
 
-  async function submitGuestAvailability() {
-    if (!viewerParticipant || isHost || !participantSession || guestSaving) return;
+  async function submitAvailability() {
+    if (!viewerParticipant || !participantSession || availabilitySaving) return;
     const target = draftMine ?? serverMine;
-    setGuestSaving(true);
+    setAvailabilitySaving(true);
     try {
       await store.commitParticipantAvailability(
         viewerParticipant.id,
@@ -111,7 +110,7 @@ export function QuestRoom({ quest }: Props) {
     } catch (e) {
       console.error(e);
     } finally {
-      setGuestSaving(false);
+      setAvailabilitySaving(false);
     }
   }
 
@@ -228,13 +227,16 @@ export function QuestRoom({ quest }: Props) {
                 {isHost ? (
                   <div className="-mt-1 mb-1 space-y-0.5">
                     <h2 className="text-lg font-extrabold tracking-tight">Share link</h2>
-                    <p className="text-xs text-muted-foreground">Invite your squad.</p>
+                    <p className="text-xs text-muted-foreground">
+                      Invite your squad. Use <span className="font-semibold text-foreground">Submit times</span> to save your grid.
+                    </p>
                   </div>
                 ) : (
                   <div className="-mt-1 mb-1 space-y-0.5">
                     <h2 className="text-lg font-extrabold tracking-tight">Your grid</h2>
                     <p className="text-xs text-muted-foreground">
-                      Times in <span className="font-bold text-foreground">{viewerTimezone}</span>.
+                      Times in <span className="font-bold text-foreground">{viewerTimezone}</span>.{" "}
+                      <span className="font-semibold text-foreground">Submit times</span> to save.
                     </p>
                   </div>
                 )}
@@ -255,40 +257,29 @@ export function QuestRoom({ quest }: Props) {
               viewerTimezone={viewerTimezone}
               viewerParticipantId={viewerParticipant.id}
               viewerMineSet={viewerMine}
-              onToggleSlot={
-                isHost
-                  ? (iso) =>
-                      store.toggleSlot(
-                        viewerParticipant.id,
-                        participantSession?.authToken ?? "",
-                        iso,
-                      )
-                  : patchGuestMine
-              }
+              onToggleSlot={patchDraftMine}
               highlightedSlotIso={highlightedSlotIso}
             />
 
-            {!isHost && (
-              <div className="flex justify-end">
-                <Button
-                  type="button"
-                  variant="raid"
-                  size="lg"
-                  disabled={!guestDirty || guestSaving}
-                  onClick={() => void submitGuestAvailability()}
-                >
-                  {guestSaving ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" /> Saving…
-                    </>
-                  ) : (
-                    <>
-                      <Check className="h-4 w-4" /> Submit times
-                    </>
-                  )}
-                </Button>
-              </div>
-            )}
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                variant="raid"
+                size="lg"
+                disabled={!availabilityDirty || availabilitySaving}
+                onClick={() => void submitAvailability()}
+              >
+                {availabilitySaving ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Saving…
+                  </>
+                ) : (
+                  <>
+                    <Check className="h-4 w-4" /> Submit times
+                  </>
+                )}
+              </Button>
+            </div>
 
             {isHost && (
               <HostControls
