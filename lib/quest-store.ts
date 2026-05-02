@@ -71,6 +71,14 @@ export type QuestStore = {
     slotIso: string,
   ) => Promise<void>;
   /**
+   * Replace this participant's availability with `desired` (batched toggles).
+   */
+  commitParticipantAvailability: (
+    participantId: string,
+    participantAuth: string,
+    desired: ReadonlySet<string>,
+  ) => Promise<void>;
+  /**
    * Host action: lock in the meeting. Replays the host_token from
    * localStorage; the RPC rejects mismatches.
    */
@@ -420,6 +428,55 @@ export function createQuestStore(quest: Quest): QuestStore {
     }
   }
 
+  async function commitParticipantAvailability(
+    participantId: string,
+    participantAuth: string,
+    desired: ReadonlySet<string>,
+  ): Promise<void> {
+    const current = new Set(state.availability.get(participantId) ?? []);
+    const desiredSet = new Set(desired);
+    const toAdd = [...desiredSet].filter((iso) => !current.has(iso));
+    const toRemove = [...current].filter((iso) => !desiredSet.has(iso));
+    if (toAdd.length === 0 && toRemove.length === 0) return;
+
+    withAvailability((next) => {
+      next.set(participantId, new Set(desiredSet));
+    });
+
+    const supabase = getSupabaseClient();
+    if (!supabase) return;
+
+    try {
+      for (const slotIso of toAdd) {
+        const { error } = await supabase.rpc("fn_toggle_availability", {
+          p_participant_id: participantId,
+          p_participant_auth: participantAuth,
+          p_slot_utc: slotIso,
+          p_add: true,
+        });
+        if (error) throw error;
+      }
+      for (const slotIso of toRemove) {
+        const { error } = await supabase.rpc("fn_toggle_availability", {
+          p_participant_id: participantId,
+          p_participant_auth: participantAuth,
+          p_slot_utc: slotIso,
+          p_add: false,
+        });
+        if (error) throw error;
+      }
+    } catch (err) {
+      console.warn(
+        "[syncquest] commitParticipantAvailability failed; reverting",
+        err,
+      );
+      withAvailability((next) => {
+        next.set(participantId, new Set(current));
+      });
+      throw err;
+    }
+  }
+
   async function confirmMeeting(
     startUtc: string,
     endUtc: string,
@@ -466,6 +523,7 @@ export function createQuestStore(quest: Quest): QuestStore {
     getServerSnapshot: () => emptySnapshot,
     joinAsParticipant,
     toggleSlot,
+    commitParticipantAvailability,
     confirmMeeting,
   };
 }

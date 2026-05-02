@@ -62,6 +62,59 @@ export function QuestRoom({ quest }: Props) {
 
   const [highlightedSlotIso, setHighlightedSlotIso] = React.useState<string | null>(null);
 
+  const serverMine = React.useMemo(() => {
+    if (!viewerParticipant) return new Set<string>();
+    return new Set(snapshot.availability.get(viewerParticipant.id) ?? []);
+  }, [snapshot.availability, viewerParticipant?.id]);
+
+  const [draftMine, setDraftMine] = React.useState<Set<string> | null>(null);
+  const [guestSaving, setGuestSaving] = React.useState(false);
+
+  const viewerMine = React.useMemo(() => {
+    if (!viewerParticipant) return new Set<string>();
+    if (isHost) return serverMine;
+    return draftMine ?? serverMine;
+  }, [viewerParticipant, isHost, serverMine, draftMine]);
+
+  const guestDirty = React.useMemo(() => {
+    if (isHost || !viewerParticipant || draftMine === null) return false;
+    if (draftMine.size !== serverMine.size) return true;
+    for (const iso of draftMine) {
+      if (!serverMine.has(iso)) return true;
+    }
+    for (const iso of serverMine) {
+      if (!draftMine.has(iso)) return true;
+    }
+    return false;
+  }, [isHost, viewerParticipant, draftMine, serverMine]);
+
+  function patchGuestMine(slotIso: string) {
+    setDraftMine((prev) => {
+      const base = new Set(prev ?? serverMine);
+      if (base.has(slotIso)) base.delete(slotIso);
+      else base.add(slotIso);
+      return base;
+    });
+  }
+
+  async function submitGuestAvailability() {
+    if (!viewerParticipant || isHost || !participantSession || guestSaving) return;
+    const target = draftMine ?? serverMine;
+    setGuestSaving(true);
+    try {
+      await store.commitParticipantAvailability(
+        viewerParticipant.id,
+        participantSession.authToken,
+        target,
+      );
+      setDraftMine(null);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setGuestSaving(false);
+    }
+  }
+
   const synergy = React.useMemo(() => {
     const count = snapshot.participants.length;
     if (count === 0) return 0;
@@ -201,15 +254,41 @@ export function QuestRoom({ quest }: Props) {
               snapshot={snapshot}
               viewerTimezone={viewerTimezone}
               viewerParticipantId={viewerParticipant.id}
-              onToggleSlot={(iso) =>
-                store.toggleSlot(
-                  viewerParticipant.id,
-                  participantSession?.authToken ?? "",
-                  iso,
-                )
+              viewerMineSet={viewerMine}
+              onToggleSlot={
+                isHost
+                  ? (iso) =>
+                      store.toggleSlot(
+                        viewerParticipant.id,
+                        participantSession?.authToken ?? "",
+                        iso,
+                      )
+                  : patchGuestMine
               }
               highlightedSlotIso={highlightedSlotIso}
             />
+
+            {!isHost && (
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  variant="raid"
+                  size="lg"
+                  disabled={!guestDirty || guestSaving}
+                  onClick={() => void submitGuestAvailability()}
+                >
+                  {guestSaving ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" /> Saving…
+                    </>
+                  ) : (
+                    <>
+                      <Check className="h-4 w-4" /> Submit times
+                    </>
+                  )}
+                </Button>
+              </div>
+            )}
 
             {isHost && (
               <HostControls
@@ -347,6 +426,7 @@ function ReadOnlyGrid({
       snapshot={snapshot}
       viewerTimezone={viewerTimezone}
       viewerParticipantId={null}
+      viewerMineSet={new Set()}
       readOnly
       highlightedSlotIso={snapshot.confirmedStartUtc}
     />

@@ -20,6 +20,8 @@ type Props = {
   snapshot: QuestSnapshot;
   viewerTimezone: string;
   viewerParticipantId: string | null;
+  /** Current viewer selection (from server or local draft). */
+  viewerMineSet: Set<string>;
   readOnly?: boolean;
   onToggleSlot?: (slotIso: string) => void;
   /** Host UI can tell the grid to highlight / select a given slot. */
@@ -33,12 +35,14 @@ type CellMeta = {
   mine: boolean;
 };
 
-function pickHeatVar(ratio: number, participants: number): string {
-  if (participants <= 0) return "var(--color-heat-0)";
-  if (ratio >= 0.999) return "var(--color-heat-max)";
-  if (ratio <= 0) return "var(--color-heat-0)";
-  const bucket = Math.min(5, Math.max(1, Math.ceil(ratio * 5)));
-  return `var(--color-heat-${bucket})`;
+/** Darker background as overlap count increases (1 … all participants). */
+function pickHeatColor(count: number, participantCount: number): string {
+  if (participantCount <= 0) return "var(--color-heat-0)";
+  if (count <= 0) return "var(--color-heat-0)";
+  if (count >= participantCount) return "var(--color-heat-max)";
+  const ratio = count / participantCount;
+  const step = Math.min(5, Math.max(1, Math.ceil(ratio * 5)));
+  return `var(--color-heat-${step})`;
 }
 
 export function AvailabilityGrid({
@@ -46,16 +50,23 @@ export function AvailabilityGrid({
   snapshot,
   viewerTimezone,
   viewerParticipantId,
+  viewerMineSet,
   readOnly,
   onToggleSlot,
   highlightedSlotIso,
   onSlotClick,
 }: Props) {
-  const gridRef = React.useRef<HTMLDivElement>(null);
-  const dragRef = React.useRef<{ mode: "add" | "remove" | null; visited: Set<string> }>({
-    mode: null,
-    visited: new Set(),
-  });
+  const dragRef = React.useRef<{
+    mode: "add" | "remove" | null;
+    visited: Set<string>;
+    colIdx: number | null;
+  }>({ mode: null, visited: new Set(), colIdx: null });
+
+  const [dragListening, setDragListening] = React.useState(false);
+  const viewerMineRef = React.useRef(viewerMineSet);
+  viewerMineRef.current = viewerMineSet;
+  const onToggleRef = React.useRef(onToggleSlot);
+  onToggleRef.current = onToggleSlot;
 
   const days = React.useMemo(() => expandQuestDays(quest), [quest]);
 
@@ -72,7 +83,6 @@ export function AvailabilityGrid({
   }, [quest]);
 
   const slotMatrix = React.useMemo(() => {
-    // Expand [days x rows] into UTC Date instants.
     const matrix: Date[][] = [];
     try {
       for (const day of days) {
@@ -107,11 +117,6 @@ export function AvailabilityGrid({
     return totals;
   }, [snapshot.availability]);
 
-  const mineSet = React.useMemo(() => {
-    if (!viewerParticipantId) return new Set<string>();
-    return snapshot.availability.get(viewerParticipantId) ?? new Set<string>();
-  }, [snapshot.availability, viewerParticipantId]);
-
   const participantCount = snapshot.participants.length;
 
   function cellMeta(slot: Date): CellMeta {
@@ -122,53 +127,84 @@ export function AvailabilityGrid({
     return {
       slotIso: iso,
       count: countsBySlot.get(iso) ?? 0,
-      mine: mineSet.has(iso),
+      mine: viewerMineSet.has(iso),
     };
   }
 
   function applyCell(slotIso: string, mode: "add" | "remove") {
-    if (readOnly || !viewerParticipantId || !onToggleSlot) return;
-    const mine = mineSet.has(slotIso);
-    if (mode === "add" && !mine) onToggleSlot(slotIso);
-    if (mode === "remove" && mine) onToggleSlot(slotIso);
+    if (readOnly || !viewerParticipantId) return;
+    const fn = onToggleRef.current;
+    if (!fn) return;
+    const mine = viewerMineRef.current.has(slotIso);
+    if (mode === "add" && !mine) fn(slotIso);
+    if (mode === "remove" && mine) fn(slotIso);
   }
 
-  function handlePointerDown(slotIso: string, e: React.PointerEvent) {
+  function endDrag() {
+    dragRef.current = { mode: null, visited: new Set(), colIdx: null };
+  }
+
+  function hitSlot(clientX: number, clientY: number): { iso: string; col: number } | null {
+    const el = document.elementFromPoint(clientX, clientY);
+    const btn = el?.closest?.("button[data-slot]") as HTMLButtonElement | null;
+    if (!btn?.dataset.slot) return null;
+    const col = Number(btn.dataset.col);
+    if (Number.isNaN(col)) return null;
+    return { iso: btn.dataset.slot, col };
+  }
+
+  function paintFromPointer(clientX: number, clientY: number) {
+    const drag = dragRef.current;
+    if (!drag.mode || drag.colIdx === null) return;
+    const hit = hitSlot(clientX, clientY);
+    if (!hit || hit.col !== drag.colIdx) return;
+    if (drag.visited.has(hit.iso)) return;
+    drag.visited.add(hit.iso);
+    applyCell(hit.iso, drag.mode);
+  }
+
+  React.useEffect(() => {
+    if (!dragListening) return;
+    function move(e: PointerEvent) {
+      paintFromPointer(e.clientX, e.clientY);
+    }
+    function up() {
+      setDragListening(false);
+      endDrag();
+    }
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    return () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+    };
+  }, [dragListening]);
+
+  function handlePointerDown(slotIso: string, colIdx: number, e: React.PointerEvent) {
     if (readOnly || !viewerParticipantId || !onToggleSlot) {
       onSlotClick?.(slotIso);
       return;
     }
     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
-    const mine = mineSet.has(slotIso);
+    const mine = viewerMineRef.current.has(slotIso);
     const mode: "add" | "remove" = mine ? "remove" : "add";
-    dragRef.current = { mode, visited: new Set([slotIso]) };
+    dragRef.current = { mode, visited: new Set([slotIso]), colIdx };
+    setDragListening(true);
     onToggleSlot(slotIso);
   }
 
-  function handlePointerEnter(slotIso: string) {
+  function handlePointerEnter(slotIso: string, colIdx: number) {
     const drag = dragRef.current;
-    if (!drag.mode) return;
+    if (!drag.mode || drag.colIdx === null) return;
+    if (colIdx !== drag.colIdx) return;
     if (drag.visited.has(slotIso)) return;
     drag.visited.add(slotIso);
     applyCell(slotIso, drag.mode);
   }
 
-  function endDrag() {
-    dragRef.current = { mode: null, visited: new Set() };
-  }
-
-  React.useEffect(() => {
-    const handler = () => endDrag();
-    window.addEventListener("pointerup", handler);
-    window.addEventListener("pointercancel", handler);
-    return () => {
-      window.removeEventListener("pointerup", handler);
-      window.removeEventListener("pointercancel", handler);
-    };
-  }, []);
-
   const timeLabels = React.useMemo(() => {
-    // Render time labels in the viewer's timezone by using column 0 as reference.
     const ref = slotMatrix[0] ?? [];
     return rowStarts.map((_, idx) => {
       const slot = ref[idx];
@@ -190,7 +226,7 @@ export function AvailabilityGrid({
               className="h-3.5 w-3.5 rounded-md border border-border/60"
               style={{ background: "var(--color-heat-0)" }}
             />
-            empty
+            0
           </span>
           <span className="flex items-center gap-1">
             <span
@@ -198,7 +234,7 @@ export function AvailabilityGrid({
               className="h-3.5 w-3.5 rounded-md"
               style={{ background: "var(--color-heat-3)" }}
             />
-            partial
+            some
           </span>
           <span className="flex items-center gap-1">
             <span
@@ -213,13 +249,10 @@ export function AvailabilityGrid({
 
       <div className="overflow-x-auto pb-2">
         <div
-          ref={gridRef}
           className="inline-block min-w-full select-none rounded-3xl border-2 border-border bg-card p-4"
-          onPointerLeave={endDrag}
         >
-          {/* Day headers */}
           <div
-            className="grid gap-1"
+            className="grid gap-px"
             style={{
               gridTemplateColumns: `72px repeat(${days.length}, minmax(64px, 1fr))`,
             }}
@@ -234,9 +267,8 @@ export function AvailabilityGrid({
             ))}
           </div>
 
-          {/* Rows */}
           <div
-            className="mt-1 grid gap-1"
+            className="mt-px grid gap-px"
             style={{
               gridTemplateColumns: `72px repeat(${days.length}, minmax(64px, 1fr))`,
             }}
@@ -252,9 +284,9 @@ export function AvailabilityGrid({
                     return <div key={colIdx} className="h-7 rounded-sm bg-transparent" />;
                   }
                   const meta = cellMeta(slot);
-                  const ratio = participantCount ? meta.count / participantCount : 0;
-                  const color = pickHeatVar(ratio, participantCount);
-                  const atMax = ratio >= 0.999 && participantCount > 0;
+                  const color = pickHeatColor(meta.count, participantCount);
+                  const atMax =
+                    participantCount > 0 && meta.count >= participantCount;
                   const midnightAt = midnightLines[colIdx];
                   const showMidnightLine = midnightAt === rowIdx;
                   const isHighlighted = highlightedSlotIso === meta.slotIso;
@@ -263,16 +295,16 @@ export function AvailabilityGrid({
                       key={colIdx}
                       type="button"
                       data-slot={meta.slotIso}
-                      onPointerDown={(e) => handlePointerDown(meta.slotIso, e)}
-                      onPointerEnter={() => handlePointerEnter(meta.slotIso)}
+                      data-col={colIdx}
+                      onPointerDown={(e) => handlePointerDown(meta.slotIso, colIdx, e)}
+                      onPointerEnter={() => handlePointerEnter(meta.slotIso, colIdx)}
                       onClick={() => {
-                        // Click handler for read-only/host selection flows.
                         if (readOnly) onSlotClick?.(meta.slotIso);
                       }}
                       className={cn(
-                        "relative grid h-7 place-items-center rounded-md border border-white/40 outline-none transition-transform touch-none",
+                        "relative grid h-7 place-items-center rounded-[4px] border border-white/35 outline-none transition-colors touch-none",
                         "focus-visible:ring-2 focus-visible:ring-primary/60",
-                        meta.mine && "ring-2 ring-primary shadow-[0_0_0_1px_hsl(var(--primary)/0.4)]",
+                        meta.mine && "ring-2 ring-primary shadow-[0_0_0_1px_hsl(var(--primary)/0.45)]",
                         meta.mine && "animate-paint-pop",
                         atMax && "glow-gold",
                         isHighlighted &&
@@ -298,7 +330,7 @@ export function AvailabilityGrid({
                       {showMidnightLine && (
                         <span
                           aria-hidden
-                          className="pointer-events-none absolute inset-x-0 -top-[1px] h-[2px] rounded-full bg-gradient-to-r from-transparent via-secondary to-transparent shadow-[0_0_6px_hsl(var(--secondary))]"
+                          className="pointer-events-none absolute inset-x-0 -top-px h-0.5 rounded-full bg-gradient-to-r from-transparent via-secondary to-transparent shadow-[0_0_6px_hsl(var(--secondary))]"
                         />
                       )}
                     </button>
@@ -316,7 +348,7 @@ export function AvailabilityGrid({
 
       {!readOnly && viewerParticipantId && (
         <p className="text-center text-[11px] text-muted-foreground">
-          Drag cells · <span className="text-secondary font-bold">orange</span> = your midnight
+          Drag one column · <span className="text-secondary font-bold">orange</span> = your midnight
         </p>
       )}
     </div>
