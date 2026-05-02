@@ -24,6 +24,7 @@ import {
 } from "@/lib/participant-token";
 import { readHostToken } from "@/lib/host-token";
 import { useClientValue } from "@/lib/use-client-value";
+import { maxOverlapRatio } from "@/lib/slot-overlap";
 import type { Quest } from "@/lib/types";
 
 type Props = { quest: Quest };
@@ -114,19 +115,16 @@ export function QuestRoom({ quest }: Props) {
     }
   }
 
-  const synergy = React.useMemo(() => {
-    const count = snapshot.participants.length;
-    if (count === 0) return 0;
-    const totals = new Map<string, number>();
-    for (const [, set] of snapshot.availability) {
-      for (const iso of set) {
-        totals.set(iso, (totals.get(iso) ?? 0) + 1);
-      }
-    }
-    let best = 0;
-    for (const n of totals.values()) if (n > best) best = n;
-    return best / count;
-  }, [snapshot.availability, snapshot.participants.length]);
+  const synergy = React.useMemo(
+    () =>
+      maxOverlapRatio(
+        snapshot,
+        viewerParticipant?.id ?? null,
+        viewerMine,
+        { useViewerDraft: Boolean(viewerParticipant) },
+      ),
+    [snapshot, viewerParticipant, viewerMine],
+  );
 
   async function handleJoin(callsign: string) {
     const participant = await store.joinAsParticipant(callsign, viewerTimezone);

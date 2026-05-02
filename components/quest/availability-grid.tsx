@@ -12,6 +12,7 @@ import {
   formatZonedSafe,
 } from "@/lib/timezone";
 import { expandQuestDays } from "@/lib/quest-days";
+import { slotOverlapTotals } from "@/lib/slot-overlap";
 import type { Quest } from "@/lib/types";
 import type { QuestSnapshot } from "@/lib/quest-store";
 
@@ -107,15 +108,19 @@ export function AvailabilityGrid({
     return slotMatrix.map((slots) => findMidnightLine(slots, viewerTimezone));
   }, [slotMatrix, viewerTimezone]);
 
-  const countsBySlot = React.useMemo(() => {
-    const totals = new Map<string, number>();
-    for (const [, set] of snapshot.availability) {
-      for (const iso of set) {
-        totals.set(iso, (totals.get(iso) ?? 0) + 1);
-      }
-    }
-    return totals;
-  }, [snapshot.availability]);
+  const countsBySlot = React.useMemo(
+    () =>
+      slotOverlapTotals(snapshot, viewerParticipantId, viewerMineSet, {
+        useViewerDraft: Boolean(viewerParticipantId) && !readOnly,
+      }),
+    [
+      snapshot.availability,
+      snapshot.participants,
+      viewerParticipantId,
+      viewerMineSet,
+      readOnly,
+    ],
+  );
 
   const participantCount = snapshot.participants.length;
 
