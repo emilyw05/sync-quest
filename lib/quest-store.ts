@@ -79,6 +79,32 @@ export type QuestStore = {
 
 const PARTICIPANT_COLUMNS = "id, quest_id, callsign, timezone, joined_at";
 
+/** Normalize RPC / PostgREST row shapes (snake_case vs camelCase). */
+function coerceRpcParticipantWithAuth(raw: unknown): ParticipantWithAuth | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const str = (a: string, alt?: string): string | undefined => {
+    const v = o[a] ?? (alt ? o[alt] : undefined);
+    return typeof v === "string" ? v : undefined;
+  };
+  const id = str("id");
+  const auth_token = str("auth_token", "authToken");
+  const quest_id = str("quest_id", "questId");
+  const callsign = str("callsign");
+  const timezone = str("timezone");
+  let joined_at = str("joined_at", "joinedAt");
+  if (!id || !auth_token || !quest_id || !callsign || !timezone) return null;
+  if (!joined_at) joined_at = new Date().toISOString();
+  return {
+    id,
+    quest_id,
+    callsign,
+    timezone,
+    joined_at,
+    auth_token,
+  };
+}
+
 export function createQuestStore(quest: Quest): QuestStore {
   let state: QuestSnapshot = {
     ...emptySnapshot,
@@ -144,6 +170,19 @@ export function createQuestStore(quest: Quest): QuestStore {
       if (questRes.error) throw questRes.error;
 
       const participants = (participantsRes.data ?? []) as Participant[];
+      const fetchedIds = new Set(participants.map((p) => p.id));
+      // Join can finish after this fetch was issued; merge optimistic rows so the
+      // UI doesn't flash or lose the viewer before realtime/refresh catches up.
+      const optimisticExtra = state.participants.filter(
+        (p) => !fetchedIds.has(p.id),
+      );
+      const merged = [...participants, ...optimisticExtra].sort((a, b) => {
+        const ta = Date.parse(a.joined_at);
+        const tb = Date.parse(b.joined_at);
+        return (
+          (Number.isFinite(ta) ? ta : 0) - (Number.isFinite(tb) ? tb : 0)
+        );
+      });
       const availability = new Map<string, Set<string>>();
       for (const row of (availabilityRes.data ?? []) as AvailabilitySlot[]) {
         let set = availability.get(row.participant_id);
@@ -155,7 +194,7 @@ export function createQuestStore(quest: Quest): QuestStore {
       }
       setState({
         ...state,
-        participants,
+        participants: merged,
         availability,
         status: questRes.data?.status ?? state.status,
         confirmedStartUtc: questRes.data?.confirmed_start_utc ?? null,
@@ -311,15 +350,15 @@ export function createQuestStore(quest: Quest): QuestStore {
     if (!data) throw new Error("No participant returned from fn_join_quest");
 
     // PostgREST / client versions occasionally return a one-row RPC as an array.
-    let raw: ParticipantWithAuth | null = data as ParticipantWithAuth;
+    let raw: unknown = data;
     if (Array.isArray(data)) {
-      raw = (data[0] as ParticipantWithAuth | undefined) ?? null;
+      raw = data[0] ?? null;
     }
     if (!raw || typeof raw !== "object") {
       throw new Error("No participant returned from fn_join_quest");
     }
-    const row = raw as ParticipantWithAuth;
-    if (!row.id || typeof row.auth_token !== "string" || !row.auth_token) {
+    const row = coerceRpcParticipantWithAuth(raw);
+    if (!row) {
       throw new Error("Join response missing id or auth_token");
     }
 

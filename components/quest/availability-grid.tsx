@@ -64,6 +64,9 @@ export function AvailabilityGrid({
     const totalDays = Math.max(0, differenceInCalendarDays(end, start)) + 1;
     const daysArr: Date[] = [];
     for (let i = 0; i < totalDays; i++) daysArr.push(addDays(start, i));
+    if (quest.slot_minutes <= 0) {
+      return { days: daysArr, rowStarts: [] as number[] };
+    }
     const rowsPerDay = Math.ceil(
       (quest.day_end_minutes - quest.day_start_minutes) / quest.slot_minutes,
     );

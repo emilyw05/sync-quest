@@ -108,6 +108,8 @@ export function buildSlotGridUtc(params: {
     hostTimezone,
   } = params;
 
+  if (slotMinutes <= 0) return [];
+
   const totalDays = Math.max(0, differenceInCalendarDays(endDate, startDate)) + 1;
   const slots: Date[] = [];
 
@@ -133,13 +135,17 @@ export function findMidnightLine(
   slotsUtc: Date[],
   viewerTimezone: string,
 ): number | null {
-  if (slotsUtc.length < 2) return null;
-  const firstDate = formatInTimeZone(slotsUtc[0], viewerTimezone, "yyyy-MM-dd");
-  for (let i = 1; i < slotsUtc.length; i++) {
-    const here = formatInTimeZone(slotsUtc[i], viewerTimezone, "yyyy-MM-dd");
-    if (here !== firstDate) return i;
+  try {
+    if (slotsUtc.length < 2) return null;
+    const firstDate = formatInTimeZone(slotsUtc[0], viewerTimezone, "yyyy-MM-dd");
+    for (let i = 1; i < slotsUtc.length; i++) {
+      const here = formatInTimeZone(slotsUtc[i], viewerTimezone, "yyyy-MM-dd");
+      if (here !== firstDate) return i;
+    }
+    return null;
+  } catch {
+    return null;
   }
-  return null;
 }
 
 /** Short label like "GMT-7" for status chips. */
