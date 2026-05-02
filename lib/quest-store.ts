@@ -309,7 +309,20 @@ export function createQuestStore(quest: Quest): QuestStore {
     });
     if (error) throw error;
     if (!data) throw new Error("No participant returned from fn_join_quest");
-    const row = data as ParticipantWithAuth;
+
+    // PostgREST / client versions occasionally return a one-row RPC as an array.
+    let raw: ParticipantWithAuth | null = data as ParticipantWithAuth;
+    if (Array.isArray(data)) {
+      raw = (data[0] as ParticipantWithAuth | undefined) ?? null;
+    }
+    if (!raw || typeof raw !== "object") {
+      throw new Error("No participant returned from fn_join_quest");
+    }
+    const row = raw as ParticipantWithAuth;
+    if (!row.id || typeof row.auth_token !== "string" || !row.auth_token) {
+      throw new Error("Join response missing id or auth_token");
+    }
+
     if (!state.participants.some((p) => p.id === row.id)) {
       // Strip auth_token before it enters client state / React tree.
       const publicRow: Participant = {

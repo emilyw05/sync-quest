@@ -1,14 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { addDays, differenceInCalendarDays } from "date-fns";
+import { addDays, differenceInCalendarDays, isValid } from "date-fns";
 import { Sun } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   buildSlotGridUtc,
   findMidnightLine,
   formatMinutesOfDay,
-  formatZoned,
+  formatZonedSafe,
 } from "@/lib/timezone";
 import type { Quest } from "@/lib/types";
 import type { QuestSnapshot } from "@/lib/quest-store";
@@ -58,6 +58,9 @@ export function AvailabilityGrid({
   const { days, rowStarts } = React.useMemo(() => {
     const start = new Date(quest.start_date);
     const end = new Date(quest.end_date);
+    if (!isValid(start) || !isValid(end)) {
+      return { days: [] as Date[], rowStarts: [] as number[] };
+    }
     const totalDays = Math.max(0, differenceInCalendarDays(end, start)) + 1;
     const daysArr: Date[] = [];
     for (let i = 0; i < totalDays; i++) daysArr.push(addDays(start, i));
@@ -74,16 +77,21 @@ export function AvailabilityGrid({
   const slotMatrix = React.useMemo(() => {
     // Expand [days x rows] into UTC Date instants.
     const matrix: Date[][] = [];
-    for (const day of days) {
-      const slots = buildSlotGridUtc({
-        startDate: day,
-        endDate: day,
-        dayStartMinutes: quest.day_start_minutes,
-        dayEndMinutes: quest.day_end_minutes,
-        slotMinutes: quest.slot_minutes,
-        hostTimezone: quest.host_timezone,
-      });
-      matrix.push(slots);
+    try {
+      for (const day of days) {
+        const slots = buildSlotGridUtc({
+          startDate: day,
+          endDate: day,
+          dayStartMinutes: quest.day_start_minutes,
+          dayEndMinutes: quest.day_end_minutes,
+          slotMinutes: quest.slot_minutes,
+          hostTimezone: quest.host_timezone,
+        });
+        matrix.push(slots);
+      }
+    } catch (err) {
+      console.error("[syncquest] buildSlotGridUtc failed", err);
+      return days.map(() => []);
     }
     return matrix;
   }, [days, quest]);
@@ -110,6 +118,9 @@ export function AvailabilityGrid({
   const participantCount = snapshot.participants.length;
 
   function cellMeta(slot: Date): CellMeta {
+    if (!isValid(slot)) {
+      return { slotIso: "", count: 0, mine: false };
+    }
     const iso = slot.toISOString();
     return {
       slotIso: iso,
@@ -165,7 +176,7 @@ export function AvailabilityGrid({
     return rowStarts.map((_, idx) => {
       const slot = ref[idx];
       if (!slot) return "";
-      return formatZoned(slot, viewerTimezone, "h:mm a");
+      return formatZonedSafe(slot, viewerTimezone, "h:mm a");
     });
   }, [rowStarts, slotMatrix, viewerTimezone]);
 
@@ -268,7 +279,7 @@ export function AvailabilityGrid({
                         readOnly ? "cursor-pointer" : "cursor-crosshair",
                       )}
                       style={{ backgroundColor: color }}
-                      aria-label={`Slot ${formatZoned(slot, viewerTimezone, "EEE MMM d, h:mm a")} — ${meta.count} duck${meta.count === 1 ? "" : "s"} ready`}
+                      aria-label={`Slot ${formatZonedSafe(slot, viewerTimezone, "EEE MMM d, h:mm a")} — ${meta.count} duck${meta.count === 1 ? "" : "s"} ready`}
                     >
                       {atMax && (
                         <Sun
@@ -319,10 +330,10 @@ function DayHeader({ day, hostTimezone }: { day: Date; hostTimezone: string }) {
   return (
     <div className="flex flex-col items-center gap-0.5 px-1 py-1">
       <span className="text-[10px] uppercase tracking-[0.15em] text-muted-foreground/80">
-        {formatZoned(day, hostTimezone, "EEE")}
+        {formatZonedSafe(day, hostTimezone, "EEE")}
       </span>
       <span className="text-xs font-semibold text-foreground tabular-nums">
-        {formatZoned(day, hostTimezone, "MMM d")}
+        {formatZonedSafe(day, hostTimezone, "MMM d")}
       </span>
     </div>
   );

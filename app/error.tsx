@@ -25,11 +25,7 @@ export default function GlobalError({
   reset: () => void;
 }) {
   useEffect(() => {
-    // Surface the error to the dev console / Vercel logs. Once we wire up
-    // Sentry (or similar) this is the hook to forward `error.digest` to it.
-    if (process.env.NODE_ENV !== "production") {
-      console.error("[SyncQuest] root error boundary:", error);
-    }
+    console.error("[SyncQuest] segment error boundary:", error);
   }, [error]);
 
   return (
@@ -70,6 +66,12 @@ export default function GlobalError({
           </CardHeader>
 
           <CardContent className="space-y-4">
+            {error.message && (
+              <p className="rounded-2xl border-2 border-destructive/30 bg-destructive/5 px-3 py-2 text-xs text-foreground">
+                <span className="font-bold text-destructive">Details: </span>
+                {error.message}
+              </p>
+            )}
             {error.digest && (
               <p className="rounded-2xl border-2 border-border bg-muted/40 px-3 py-2 text-[11px] font-mono text-muted-foreground">
                 ref · {error.digest}

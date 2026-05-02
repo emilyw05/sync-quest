@@ -56,6 +56,20 @@ export function formatZoned(
   return formatInTimeZone(utc, timezone, fmt);
 }
 
+/** Like `formatZoned`, but never throws (invalid timezone / date → fallback). */
+export function formatZonedSafe(
+  utc: Date | string,
+  timezone: string,
+  fmt: string,
+  fallback = "—",
+): string {
+  try {
+    return formatInTimeZone(utc, timezone, fmt);
+  } catch {
+    return fallback;
+  }
+}
+
 /** Return HH:mm for a minutes-from-midnight value (display helper). */
 export function formatMinutesOfDay(minutes: number, use12h = true): string {
   const h24 = Math.floor(minutes / 60) % 24;

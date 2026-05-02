@@ -188,4 +188,4 @@ full audit.
 
 Smoke test: Vercel deploy hook 2026-04-29T23:31:30Z
 
-Smoke test: manual edit
+Chore: vercel git smoke test
