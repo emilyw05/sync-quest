@@ -15,6 +15,9 @@ function keysToSortedDates(keys: Set<string>): Date[] {
     });
 }
 
+/** Delay before clearing painted keys so iOS/WebKit synthetic clicks are suppressed. */
+const PAINTED_KEY_CLICK_GUARD_MS = 480;
+
 type Props = {
   timezone: string;
   selectedDays: Date[];
@@ -25,8 +28,8 @@ type Props = {
 };
 
 /**
- * Multi-day picker with tap–drag painting. Uses pointer events so touch and mouse
- * both paint across days without double-toggling on click.
+ * Multi-day picker with tap–drag painting. Pointer events own selection; we block the
+ * follow-up synthetic click from react-day-picker so taps don't double-toggle.
  */
 export function MeetupDaysCalendar({
   timezone,
@@ -40,7 +43,9 @@ export function MeetupDaysCalendar({
     null,
   );
   const dragWorkRef = React.useRef<Set<string> | null>(null);
-  const suppressClickRef = React.useRef(false);
+  /** Days updated during the current pointer gesture — suppress library click for these. */
+  const paintedKeysRef = React.useRef<Set<string>>(new Set());
+  const clearPaintedTimerRef = React.useRef<number | null>(null);
   const selectedRef = React.useRef(selectedDays);
   const onDaysChangeRef = React.useRef(onDaysChange);
 
@@ -49,19 +54,31 @@ export function MeetupDaysCalendar({
     onDaysChangeRef.current = onDaysChange;
   }, [selectedDays, onDaysChange]);
 
+  function scheduleClearPaintedKeys() {
+    if (clearPaintedTimerRef.current != null) {
+      clearTimeout(clearPaintedTimerRef.current);
+    }
+    clearPaintedTimerRef.current = window.setTimeout(() => {
+      paintedKeysRef.current.clear();
+      clearPaintedTimerRef.current = null;
+    }, PAINTED_KEY_CLICK_GUARD_MS);
+  }
+
   React.useEffect(() => {
     function onPointerEnd() {
       dragActiveRef.current = null;
       dragWorkRef.current = null;
-      window.setTimeout(() => {
-        suppressClickRef.current = false;
-      }, 0);
+      scheduleClearPaintedKeys();
     }
     window.addEventListener("pointerup", onPointerEnd);
     window.addEventListener("pointercancel", onPointerEnd);
     return () => {
       window.removeEventListener("pointerup", onPointerEnd);
       window.removeEventListener("pointercancel", onPointerEnd);
+      if (clearPaintedTimerRef.current != null) {
+        clearTimeout(clearPaintedTimerRef.current);
+        clearPaintedTimerRef.current = null;
+      }
     };
   }, []);
 
@@ -73,11 +90,18 @@ export function MeetupDaysCalendar({
           className={cn(props.className, "touch-manipulation select-none")}
           onPointerDown={(e) => {
             props.onPointerDown?.(e);
-            suppressClickRef.current = false;
             if (props.modifiers.disabled) return;
-            /* Touch/pen primary contact may not use mouse button 0; only filter secondary mouse buttons. */
             if (e.pointerType === "mouse" && e.button !== 0) return;
+
+            if (clearPaintedTimerRef.current != null) {
+              clearTimeout(clearPaintedTimerRef.current);
+              clearPaintedTimerRef.current = null;
+            }
+
             const key = dateToDayKeyInTimezone(props.day.date, timezone);
+            paintedKeysRef.current.clear();
+            paintedKeysRef.current.add(key);
+
             const base = new Set(
               selectedRef.current.map((d) => dateToDayKeyInTimezone(d, timezone)),
             );
@@ -88,7 +112,15 @@ export function MeetupDaysCalendar({
             else base.delete(key);
             dragWorkRef.current = base;
             onDaysChangeRef.current(keysToSortedDates(base));
-            suppressClickRef.current = true;
+
+            const el = e.currentTarget;
+            if (el instanceof HTMLButtonElement && typeof el.setPointerCapture === "function") {
+              try {
+                el.setPointerCapture(e.pointerId);
+              } catch {
+                /* ignore */
+              }
+            }
           }}
           onPointerEnter={(e) => {
             props.onPointerEnter?.(e);
@@ -97,12 +129,14 @@ export function MeetupDaysCalendar({
             const work = dragWorkRef.current;
             if (!st?.active || !work) return;
             const key = dateToDayKeyInTimezone(props.day.date, timezone);
+            paintedKeysRef.current.add(key);
             if (st.mode === "add") work.add(key);
             else work.delete(key);
             onDaysChangeRef.current(keysToSortedDates(work));
           }}
           onClick={(e) => {
-            if (suppressClickRef.current) {
+            const key = dateToDayKeyInTimezone(props.day.date, timezone);
+            if (paintedKeysRef.current.has(key)) {
               e.preventDefault();
               e.stopPropagation();
               return;
