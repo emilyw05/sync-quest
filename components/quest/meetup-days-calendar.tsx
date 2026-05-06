@@ -70,11 +70,13 @@ export function MeetupDaysCalendar({
       return (
         <DayButton
           {...props}
-          className={cn(props.className, "touch-none select-none")}
+          className={cn(props.className, "touch-manipulation select-none")}
           onPointerDown={(e) => {
             props.onPointerDown?.(e);
+            suppressClickRef.current = false;
             if (props.modifiers.disabled) return;
-            if (e.button !== 0) return;
+            /* Touch/pen primary contact may not use mouse button 0; only filter secondary mouse buttons. */
+            if (e.pointerType === "mouse" && e.button !== 0) return;
             const key = dateToDayKeyInTimezone(props.day.date, timezone);
             const base = new Set(
               selectedRef.current.map((d) => dateToDayKeyInTimezone(d, timezone)),
