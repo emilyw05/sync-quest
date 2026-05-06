@@ -7,7 +7,6 @@ import { cn } from "@/lib/utils";
 import {
   buildSlotGridUtc,
   dateToDayKeyInTimezone,
-  findMidnightLine,
   formatMinutesOfDay,
   formatZonedSafe,
 } from "@/lib/timezone";
@@ -36,13 +35,18 @@ type CellMeta = {
   mine: boolean;
 };
 
-/** Darker background as overlap count increases (1 … all participants). */
-function pickHeatColor(count: number, participantCount: number): string {
-  if (participantCount <= 0) return "var(--color-heat-0)";
-  if (count <= 0) return "var(--color-heat-0)";
+/** Empty = grey. ≥1 person = mint ramp by overlap; your pick nudges one step darker; gold = all. */
+function pickHeatColor(
+  count: number,
+  participantCount: number,
+  mine: boolean,
+): string {
+  if (count <= 0) return "var(--color-heat-empty)";
+  if (participantCount <= 0) return "var(--color-heat-1)";
   if (count >= participantCount) return "var(--color-heat-max)";
   const ratio = count / participantCount;
-  const step = Math.min(5, Math.max(1, Math.ceil(ratio * 5)));
+  let step = Math.min(5, Math.max(1, Math.ceil(ratio * 5)));
+  if (mine) step = Math.min(5, step + 1);
   return `var(--color-heat-${step})`;
 }
 
@@ -103,10 +107,6 @@ export function AvailabilityGrid({
     }
     return matrix;
   }, [days, quest]);
-
-  const midnightLines = React.useMemo(() => {
-    return slotMatrix.map((slots) => findMidnightLine(slots, viewerTimezone));
-  }, [slotMatrix, viewerTimezone]);
 
   const countsBySlot = React.useMemo(
     () =>
@@ -229,17 +229,17 @@ export function AvailabilityGrid({
             <span
               aria-hidden
               className="h-3.5 w-3.5 rounded-md border border-border/60"
-              style={{ background: "var(--color-heat-0)" }}
+              style={{ background: "var(--color-heat-empty)" }}
             />
-            0
+            none
           </span>
           <span className="flex items-center gap-1">
             <span
               aria-hidden
               className="h-3.5 w-3.5 rounded-md"
-              style={{ background: "var(--color-heat-3)" }}
+              style={{ background: "var(--color-heat-1)" }}
             />
-            some
+            has votes
           </span>
           <span className="flex items-center gap-1">
             <span
@@ -289,11 +289,9 @@ export function AvailabilityGrid({
                     return <div key={colIdx} className="h-7 rounded-sm bg-transparent" />;
                   }
                   const meta = cellMeta(slot);
-                  const color = pickHeatColor(meta.count, participantCount);
+                  const color = pickHeatColor(meta.count, participantCount, meta.mine);
                   const atMax =
                     participantCount > 0 && meta.count >= participantCount;
-                  const midnightAt = midnightLines[colIdx];
-                  const showMidnightLine = midnightAt === rowIdx;
                   const isHighlighted = highlightedSlotIso === meta.slotIso;
                   return (
                     <button
@@ -332,12 +330,6 @@ export function AvailabilityGrid({
                           className="h-1.5 w-1.5 rounded-full bg-primary shadow-[0_0_0_2px_hsl(var(--card))]"
                         />
                       )}
-                      {showMidnightLine && (
-                        <span
-                          aria-hidden
-                          className="pointer-events-none absolute inset-x-0 -top-px h-0.5 rounded-full bg-gradient-to-r from-transparent via-secondary to-transparent shadow-[0_0_6px_hsl(var(--secondary))]"
-                        />
-                      )}
                     </button>
                   );
                 })}
@@ -350,12 +342,6 @@ export function AvailabilityGrid({
           )}
         </div>
       </div>
-
-      {!readOnly && viewerParticipantId && (
-        <p className="text-center text-[11px] text-muted-foreground">
-          Drag one column · <span className="text-secondary font-bold">orange</span> = your midnight
-        </p>
-      )}
     </div>
   );
 }

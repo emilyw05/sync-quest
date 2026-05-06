@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { addDays, format } from "date-fns";
@@ -26,13 +27,14 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Calendar } from "@/components/ui/calendar";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { MeetupDaysCalendar } from "@/components/quest/meetup-days-calendar";
 import { cn } from "@/lib/utils";
+import { useIsDesktopMd } from "@/lib/use-is-desktop-md";
 import {
   dateToDayKeyInTimezone,
   formatMinutesOfDay,
@@ -72,7 +74,9 @@ function createQuestErrorMessage(
 export function QuestCreationForm() {
   const router = useRouter();
   const mounted = useHasMounted();
+  const isDesktop = useIsDesktopMd();
   const timezone = useClientValue(() => getLocalTimezone(), "UTC");
+  const [calendarOpen, setCalendarOpen] = React.useState(false);
 
   const [title, setTitle] = React.useState("Team meetup");
   const [callsign, setCallsign] = React.useState("");
@@ -126,6 +130,17 @@ export function QuestCreationForm() {
       Math.ceil((dayEnd - dayStart) / slotMinutes)
     );
   }, [meetingDayKeys.length, dayStart, dayEnd, slotMinutes]);
+
+  const sheetOpen = calendarOpen && !isDesktop;
+
+  React.useEffect(() => {
+    if (!sheetOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [sheetOpen]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -216,38 +231,139 @@ export function QuestCreationForm() {
             </div>
 
             <Field label="Days" icon={<CalendarDays className="h-3.5 w-3.5" />}>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="lg"
-                    className={cn(
-                      "w-full justify-between text-left font-medium",
-                      meetingDayKeys.length === 0 && "text-muted-foreground",
-                    )}
-                  >
-                    <span className="flex items-center gap-2">
-                      <CalendarDays className="h-4 w-4 text-primary" />
-                      {daysLabel}
-                    </span>
-                    {meetingDayKeys.length > 0 && (
-                      <span className="text-xs text-muted-foreground tabular-nums">
-                        {meetingDayKeys.length}
+              {isDesktop ? (
+                <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="lg"
+                      className={cn(
+                        "w-full justify-between text-left font-medium",
+                        meetingDayKeys.length === 0 && "text-muted-foreground",
+                      )}
+                      aria-expanded={calendarOpen}
+                    >
+                      <span className="flex items-center gap-2">
+                        <CalendarDays className="h-4 w-4 text-primary" />
+                        {daysLabel}
                       </span>
-                    )}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto" align="start">
-                  <Calendar
-                    mode="multiple"
-                    numberOfMonths={2}
-                    selected={selectedDays}
-                    onSelect={(d) => setUserDays(d ?? [])}
-                    disabled={{ before: new Date() }}
-                  />
-                </PopoverContent>
-              </Popover>
+                      {meetingDayKeys.length > 0 && (
+                        <span className="text-xs text-muted-foreground tabular-nums">
+                          {meetingDayKeys.length}
+                        </span>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-2" align="start">
+                    <MeetupDaysCalendar
+                      timezone={timezone}
+                      selectedDays={selectedDays}
+                      onDaysChange={(d) => setUserDays(d)}
+                      disabledBefore={new Date()}
+                      numberOfMonths={2}
+                    />
+                  </PopoverContent>
+                </Popover>
+              ) : (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="lg"
+                  className={cn(
+                    "w-full justify-between text-left font-medium",
+                    meetingDayKeys.length === 0 && "text-muted-foreground",
+                  )}
+                  aria-expanded={calendarOpen}
+                  aria-haspopup="dialog"
+                  onClick={() => setCalendarOpen(true)}
+                >
+                  <span className="flex items-center gap-2">
+                    <CalendarDays className="h-4 w-4 text-primary" />
+                    {daysLabel}
+                  </span>
+                  {meetingDayKeys.length > 0 && (
+                    <span className="text-xs text-muted-foreground tabular-nums">
+                      {meetingDayKeys.length}
+                    </span>
+                  )}
+                </Button>
+              )}
+
+              {mounted &&
+                !isDesktop &&
+                createPortal(
+                  <AnimatePresence>
+                    {sheetOpen ? (
+                      <motion.div
+                        key="meetup-days-sheet-root"
+                        className="fixed inset-0 z-[200]"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                      >
+                        <button
+                          type="button"
+                          aria-label="Close calendar"
+                          className="absolute inset-0 bg-black/60 backdrop-blur-[1px]"
+                          onClick={() => setCalendarOpen(false)}
+                        />
+                        <motion.div
+                          role="dialog"
+                          aria-modal="true"
+                          aria-labelledby="meetup-days-sheet-title"
+                          className="absolute inset-x-0 bottom-0 max-h-[88vh] overflow-y-auto rounded-t-3xl border-t-2 border-border bg-card text-card-foreground shadow-[0_-24px_80px_-20px_rgba(0,0,0,0.35)] pb-[max(env(safe-area-inset-bottom,0px),12px)]"
+                          initial={{ y: "100%" }}
+                          animate={{ y: 0 }}
+                          exit={{ y: "100%" }}
+                          transition={{ type: "spring", damping: 28, stiffness: 320 }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="flex justify-center pt-2 pb-1">
+                            <span
+                              className="h-1.5 w-10 rounded-full bg-muted-foreground/25"
+                              aria-hidden
+                            />
+                          </div>
+                          <div className="px-4 pb-2">
+                            <h2
+                              id="meetup-days-sheet-title"
+                              className="text-center text-sm font-bold text-foreground"
+                            >
+                              Choose days
+                            </h2>
+                            <p className="mt-0.5 text-center text-xs text-muted-foreground">
+                              Tap or drag across days to select
+                            </p>
+                          </div>
+                          <div className="px-2 pb-3">
+                            <MeetupDaysCalendar
+                              timezone={timezone}
+                              selectedDays={selectedDays}
+                              onDaysChange={(d) => setUserDays(d)}
+                              disabledBefore={new Date()}
+                              numberOfMonths={1}
+                              className="mx-auto w-fit"
+                            />
+                          </div>
+                          <div className="px-4 pb-2">
+                            <Button
+                              type="button"
+                              variant="raid"
+                              size="lg"
+                              className="w-full"
+                              onClick={() => setCalendarOpen(false)}
+                            >
+                              Done
+                            </Button>
+                          </div>
+                        </motion.div>
+                      </motion.div>
+                    ) : null}
+                  </AnimatePresence>,
+                  document.body,
+                )}
             </Field>
 
             <Field label="Hours" icon={<Sun className="h-3.5 w-3.5" />}>

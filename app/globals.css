@@ -48,14 +48,16 @@
   --radius: 1.25rem;                 /* rounded by default — storybook feel */
 
   /*
-   * Heatmap: lighter = fewer people, darker / richer = more overlap, gold = all.
+   * Heatmap: empty = neutral grey; mint ramps up with overlap; gold = everyone.
+   * Greens are deliberately saturated so "someone chose this" reads vs empty.
    */
-  --heat-0: 210 50% 94%;
-  --heat-1: 205 48% 82%;
-  --heat-2: 198 45% 68%;
-  --heat-3: 188 42% 54%;
-  --heat-4: 175 48% 40%;
-  --heat-5: 160 52% 30%;
+  --heat-empty: 210 18% 92%;
+  --heat-0: 210 18% 92%; /* alias for older docs / tokens */
+  --heat-1: 165 42% 86%;
+  --heat-2: 165 48% 72%;
+  --heat-3: 168 52% 55%;
+  --heat-4: 172 58% 40%;
+  --heat-5: 172 62% 28%;
   --heat-max: 43 96% 52%;
 }
 
@@ -81,6 +83,7 @@
   --color-ring: hsl(var(--ring));
 
   --color-heat-0: hsl(var(--heat-0));
+  --color-heat-empty: hsl(var(--heat-empty));
   --color-heat-1: hsl(var(--heat-1));
   --color-heat-2: hsl(var(--heat-2));
   --color-heat-3: hsl(var(--heat-3));
