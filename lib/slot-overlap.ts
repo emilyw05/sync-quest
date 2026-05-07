@@ -1,4 +1,5 @@
 import type { QuestSnapshot } from "@/lib/quest-store";
+import { canonicalSlotUtcKey } from "@/lib/timezone";
 
 /**
  * Head-count per slot ISO for heat / synergy.
@@ -12,11 +13,13 @@ export function slotOverlapTotals(
   opts: { useViewerDraft: boolean },
 ): Map<string, number> {
   const totals = new Map<string, number>();
+  function bump(iso: string) {
+    const k = canonicalSlotUtcKey(iso);
+    totals.set(k, (totals.get(k) ?? 0) + 1);
+  }
   if (!opts.useViewerDraft || !viewerParticipantId) {
     for (const [, set] of snapshot.availability) {
-      for (const iso of set) {
-        totals.set(iso, (totals.get(iso) ?? 0) + 1);
-      }
+      for (const iso of set) bump(iso);
     }
     return totals;
   }
@@ -28,14 +31,10 @@ export function slotOverlapTotals(
       p.id === viewerParticipantId
         ? viewerMine
         : (snapshot.availability.get(p.id) ?? new Set<string>());
-    for (const iso of set) {
-      totals.set(iso, (totals.get(iso) ?? 0) + 1);
-    }
+    for (const iso of set) bump(iso);
   }
   if (!seen.has(viewerParticipantId)) {
-    for (const iso of viewerMine) {
-      totals.set(iso, (totals.get(iso) ?? 0) + 1);
-    }
+    for (const iso of viewerMine) bump(iso);
   }
   return totals;
 }

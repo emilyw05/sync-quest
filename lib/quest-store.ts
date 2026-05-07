@@ -3,6 +3,7 @@
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { getSupabaseClient } from "@/lib/supabase";
 import { readHostToken } from "@/lib/host-token";
+import { canonicalSlotUtcKey } from "@/lib/timezone";
 import type {
   AvailabilitySlot,
   Participant,
@@ -198,7 +199,7 @@ export function createQuestStore(quest: Quest): QuestStore {
           set = new Set();
           availability.set(row.participant_id, set);
         }
-        set.add(row.slot_utc);
+        set.add(canonicalSlotUtcKey(row.slot_utc));
       }
       setState({
         ...state,
@@ -268,14 +269,14 @@ export function createQuestStore(quest: Quest): QuestStore {
                 set = new Set();
                 next.set(row.participant_id, set);
               }
-              set.add(row.slot_utc);
+              set.add(canonicalSlotUtcKey(row.slot_utc));
             });
           } else if (payload.eventType === "DELETE") {
             const row = payload.old as AvailabilitySlot;
             withAvailability((next) => {
               const set = next.get(row.participant_id);
               if (!set) return;
-              set.delete(row.slot_utc);
+              set.delete(canonicalSlotUtcKey(row.slot_utc));
             });
           }
         },
@@ -389,8 +390,9 @@ export function createQuestStore(quest: Quest): QuestStore {
     participantAuth: string,
     slotIso: string,
   ): Promise<void> {
+    const slotKey = canonicalSlotUtcKey(slotIso);
     const existingSet = state.availability.get(participantId);
-    const currentlyOn = existingSet?.has(slotIso) ?? false;
+    const currentlyOn = existingSet?.has(slotKey) ?? false;
 
     // Optimistic update
     withAvailability((next) => {
@@ -399,8 +401,8 @@ export function createQuestStore(quest: Quest): QuestStore {
         set = new Set();
         next.set(participantId, set);
       }
-      if (currentlyOn) set.delete(slotIso);
-      else set.add(slotIso);
+      if (currentlyOn) set.delete(slotKey);
+      else set.add(slotKey);
     });
 
     const supabase = getSupabaseClient();
@@ -409,7 +411,7 @@ export function createQuestStore(quest: Quest): QuestStore {
       const { error } = await supabase.rpc("fn_toggle_availability", {
         p_participant_id: participantId,
         p_participant_auth: participantAuth,
-        p_slot_utc: slotIso,
+        p_slot_utc: slotKey,
         p_add: !currentlyOn,
       });
       if (error) throw error;
@@ -422,8 +424,8 @@ export function createQuestStore(quest: Quest): QuestStore {
           set = new Set();
           next.set(participantId, set);
         }
-        if (currentlyOn) set.add(slotIso);
-        else set.delete(slotIso);
+        if (currentlyOn) set.add(slotKey);
+        else set.delete(slotKey);
       });
     }
   }
@@ -433,8 +435,10 @@ export function createQuestStore(quest: Quest): QuestStore {
     participantAuth: string,
     desired: ReadonlySet<string>,
   ): Promise<void> {
-    const current = new Set(state.availability.get(participantId) ?? []);
-    const desiredSet = new Set(desired);
+    const current = new Set(
+      [...(state.availability.get(participantId) ?? [])].map(canonicalSlotUtcKey),
+    );
+    const desiredSet = new Set([...desired].map(canonicalSlotUtcKey));
     const toAdd = [...desiredSet].filter((iso) => !current.has(iso));
     const toRemove = [...current].filter((iso) => !desiredSet.has(iso));
     if (toAdd.length === 0 && toRemove.length === 0) return;

@@ -6,6 +6,7 @@ import { Sun } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   buildSlotGridUtc,
+  canonicalSlotUtcKey,
   dateToDayKeyInTimezone,
   formatMinutesOfDay,
   formatZonedSafe,
@@ -69,9 +70,12 @@ export function AvailabilityGrid({
 
   const [dragListening, setDragListening] = React.useState(false);
   const viewerMineRef = React.useRef(viewerMineSet);
-  viewerMineRef.current = viewerMineSet;
   const onToggleRef = React.useRef(onToggleSlot);
-  onToggleRef.current = onToggleSlot;
+
+  React.useLayoutEffect(() => {
+    viewerMineRef.current = viewerMineSet;
+    onToggleRef.current = onToggleSlot;
+  }, [viewerMineSet, onToggleSlot]);
 
   const days = React.useMemo(() => expandQuestDays(quest), [quest]);
 
@@ -114,8 +118,7 @@ export function AvailabilityGrid({
         useViewerDraft: Boolean(viewerParticipantId) && !readOnly,
       }),
     [
-      snapshot.availability,
-      snapshot.participants,
+      snapshot,
       viewerParticipantId,
       viewerMineSet,
       readOnly,
@@ -128,7 +131,7 @@ export function AvailabilityGrid({
     if (!isValid(slot)) {
       return { slotIso: "", count: 0, mine: false };
     }
-    const iso = slot.toISOString();
+    const iso = canonicalSlotUtcKey(slot.toISOString());
     return {
       slotIso: iso,
       count: countsBySlot.get(iso) ?? 0,
@@ -136,14 +139,17 @@ export function AvailabilityGrid({
     };
   }
 
-  function applyCell(slotIso: string, mode: "add" | "remove") {
-    if (readOnly || !viewerParticipantId) return;
-    const fn = onToggleRef.current;
-    if (!fn) return;
-    const mine = viewerMineRef.current.has(slotIso);
-    if (mode === "add" && !mine) fn(slotIso);
-    if (mode === "remove" && mine) fn(slotIso);
-  }
+  const applyCell = React.useCallback(
+    (slotIso: string, mode: "add" | "remove") => {
+      if (readOnly || !viewerParticipantId) return;
+      const fn = onToggleRef.current;
+      if (!fn) return;
+      const mine = viewerMineRef.current.has(slotIso);
+      if (mode === "add" && !mine) fn(slotIso);
+      if (mode === "remove" && mine) fn(slotIso);
+    },
+    [readOnly, viewerParticipantId],
+  );
 
   function endDrag() {
     dragRef.current = { mode: null, visited: new Set(), colIdx: null };
@@ -158,18 +164,17 @@ export function AvailabilityGrid({
     return { iso: btn.dataset.slot, col };
   }
 
-  function paintFromPointer(clientX: number, clientY: number) {
-    const drag = dragRef.current;
-    if (!drag.mode || drag.colIdx === null) return;
-    const hit = hitSlot(clientX, clientY);
-    if (!hit || hit.col !== drag.colIdx) return;
-    if (drag.visited.has(hit.iso)) return;
-    drag.visited.add(hit.iso);
-    applyCell(hit.iso, drag.mode);
-  }
-
   React.useEffect(() => {
     if (!dragListening) return;
+    function paintFromPointer(clientX: number, clientY: number) {
+      const drag = dragRef.current;
+      if (!drag.mode || drag.colIdx === null) return;
+      const hit = hitSlot(clientX, clientY);
+      if (!hit || hit.col !== drag.colIdx) return;
+      if (drag.visited.has(hit.iso)) return;
+      drag.visited.add(hit.iso);
+      applyCell(hit.iso, drag.mode);
+    }
     function move(e: PointerEvent) {
       paintFromPointer(e.clientX, e.clientY);
     }
@@ -185,7 +190,7 @@ export function AvailabilityGrid({
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", up);
     };
-  }, [dragListening]);
+  }, [dragListening, applyCell]);
 
   function handlePointerDown(slotIso: string, colIdx: number, e: React.PointerEvent) {
     if (readOnly || !viewerParticipantId || !onToggleSlot) {
@@ -292,7 +297,9 @@ export function AvailabilityGrid({
                   const color = pickHeatColor(meta.count, participantCount, meta.mine);
                   const atMax =
                     participantCount > 0 && meta.count >= participantCount;
-                  const isHighlighted = highlightedSlotIso === meta.slotIso;
+                  const isHighlighted =
+                    Boolean(highlightedSlotIso) &&
+                    canonicalSlotUtcKey(highlightedSlotIso!) === meta.slotIso;
                   return (
                     <button
                       key={colIdx}

@@ -7,7 +7,7 @@ import { Anchor, CalendarCheck, Loader2, Sparkles } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { formatZoned } from "@/lib/timezone";
+import { canonicalSlotUtcKey, formatZoned } from "@/lib/timezone";
 import type { Quest } from "@/lib/types";
 import type { QuestSnapshot } from "@/lib/quest-store";
 
@@ -43,7 +43,8 @@ export function HostControls({
     const totals = new Map<string, number>();
     for (const [, set] of snapshot.availability) {
       for (const iso of set) {
-        totals.set(iso, (totals.get(iso) ?? 0) + 1);
+        const k = canonicalSlotUtcKey(iso);
+        totals.set(k, (totals.get(k) ?? 0) + 1);
       }
     }
     const arr: Candidate[] = [];
@@ -121,7 +122,8 @@ export function HostControls({
       ) : (
         <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
           {topCandidates.map((c) => {
-            const isActive = activeIso === c.slotIso;
+            const isActive =
+              activeIso != null && canonicalSlotUtcKey(activeIso) === c.slotIso;
             const atMax = c.ratio >= 0.999 && participantCount > 0;
             return (
               <button

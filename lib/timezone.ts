@@ -11,6 +11,18 @@ import { formatInTimeZone, fromZonedTime, toZonedTime } from "date-fns-tz";
 
 const MINUTES_PER_DAY = 24 * 60;
 
+/**
+ * Canonical UTC key for one availability slot instant.
+ * DB `timestamptz` and client `Date.toISOString()` often differ in formatting
+ * (`+00:00` vs `Z`, optional fractional seconds). Parsing aligns them so grid
+ * cells match stored `availability.slot_utc` rows.
+ */
+export function canonicalSlotUtcKey(iso: string): string {
+  const ms = Date.parse(iso);
+  if (!Number.isFinite(ms)) return iso;
+  return new Date(ms).toISOString();
+}
+
 /** Resolve the browser's IANA timezone with a safe fallback. */
 export function getLocalTimezone(): string {
   if (typeof Intl === "undefined") return "UTC";
